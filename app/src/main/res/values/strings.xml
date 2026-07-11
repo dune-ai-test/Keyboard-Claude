@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Custom Keyboard</string>
+    <string name="clipboard_manager">Clipboard Manager</string>
+    <string name="ime_subtype_english">English (US)</string>
+    <string name="settings_title">Keyboard Settings</string>
+    <string name="privacy_notice">All typing data, dictionaries and clipboard history stay on this device. Nothing is uploaded to any server. Voice typing uses the Android system speech recognizer, which may process audio per your device settings.</string>
+</resources>

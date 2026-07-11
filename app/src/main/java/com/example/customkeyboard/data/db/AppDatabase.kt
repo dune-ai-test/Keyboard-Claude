@@ -1,0 +1,28 @@
+package com.example.customkeyboard.data.db
+
+import android.content.Context
+import androidx.room.Database
+import androidx.room.Room
+import androidx.room.RoomDatabase
+
+@Database(entities = [ClipboardItem::class], version = 1, exportSchema = false)
+abstract class AppDatabase : RoomDatabase() {
+    abstract fun clipboardDao(): ClipboardDao
+
+    companion object {
+        @Volatile private var instance: AppDatabase? = null
+
+        fun getInstance(context: Context): AppDatabase =
+            instance ?: synchronized(this) {
+                instance ?: Room.databaseBuilder(
+                    context.applicationContext,
+                    AppDatabase::class.java,
+                    "clipboard_history.db"
+                )
+                    // Clipboard content can be sensitive; keep writes off the main thread only,
+                    // never fall back to destructive migration silently in production.
+                    .fallbackToDestructiveMigration()
+                    .build().also { instance = it }
+            }
+    }
+}
