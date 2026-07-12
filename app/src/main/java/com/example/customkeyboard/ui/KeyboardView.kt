@@ -1,5 +1,6 @@
 package com.example.customkeyboard.ui
 
+import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -84,6 +85,18 @@ class KeyboardView @JvmOverloads constructor(
     private var pressedKey: KeyModel? = null
     private var pressedRect: RectF? = null
 
+    // Smooth press-highlight crossfade (replaces an instant color swap so key taps feel
+    // responsive/soft rather than an abrupt on/off flip).
+    private var pressAnimator: ValueAnimator? = null
+    private var pressAlpha: Float = 0f
+    private var animatingKey: KeyModel? = null
+
+    // Enlarged "key preview" bubble that pops up above the finger while a character key is
+    // held — the classic tactile-feeling feedback most keyboards use, absent before now.
+    private var previewAnimator: ValueAnimator? = null
+    private var previewAlpha: Float = 0f
+    private var previewEntry: KeyBoundsEntry? = null
+
     private var longPressRunnable: Runnable? = null
     private var longPressTriggered = false
     private var showingPopupFor: KeyBoundsEntry? = null
@@ -110,7 +123,6 @@ class KeyboardView @JvmOverloads constructor(
         keySpecialBgPaint.color = ContextCompat.getColor(context, R.color.kb_key_special_background)
         keyPrimaryBgPaint.color = ContextCompat.getColor(context, R.color.kb_accent)
         keyPrimaryBgPressedPaint.color = ContextCompat.getColor(context, R.color.kb_accent)
-        keyPrimaryBgPressedPaint.alpha = 180
         keyTextPaint.color = ContextCompat.getColor(context, R.color.kb_key_text)
         hintTextPaint.color = ContextCompat.getColor(context, R.color.kb_key_hint)
         popupBgPaint.color = ContextCompat.getColor(context, R.color.kb_popup_background)
@@ -123,6 +135,14 @@ class KeyboardView @JvmOverloads constructor(
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         computeKeyBounds()
+    }
+
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        pressAnimator?.cancel()
+        previewAnimator?.cancel()
+        longPressRunnable?.let { removeCallbacks(it) }
+        backspaceRepeatRunnable?.let { removeCallbacks(it) }
     }
 
     private fun computeKeyBounds() {
@@ -164,6 +184,69 @@ class KeyboardView @JvmOverloads constructor(
         return map
     }
 
+    /** Starts (or restarts, if the finger slid onto a new key) the smooth press-highlight
+     *  crossfade and, for ordinary character keys, the enlarged preview bubble. */
+    private fun startPressAnimation(entry: KeyBoundsEntry) {
+        pressAnimator?.cancel()
+        animatingKey = entry.key
+        pressAnimator = ValueAnimator.ofFloat(pressAlpha, 1f).apply {
+            duration = PRESS_FADE_IN_MS
+            addUpdateListener {
+                pressAlpha = it.animatedValue as Float
+                invalidate()
+            }
+            start()
+        }
+
+        if (entry.key.type == KeyType.CHARACTER || entry.key.type == KeyType.COMMA || entry.key.type == KeyType.PERIOD) {
+            showPreview(entry)
+        } else {
+            hidePreview()
+        }
+    }
+
+    /** Fades the press-highlight back out (from whatever alpha it's currently at) and hides
+     *  the preview bubble — called once the finger lifts or the gesture is cancelled. */
+    private fun endPressAnimation() {
+        pressAnimator?.cancel()
+        pressAnimator = ValueAnimator.ofFloat(pressAlpha, 0f).apply {
+            duration = PRESS_FADE_OUT_MS
+            addUpdateListener {
+                pressAlpha = it.animatedValue as Float
+                invalidate()
+            }
+            start()
+        }
+        hidePreview()
+    }
+
+    private fun showPreview(entry: KeyBoundsEntry) {
+        previewAnimator?.cancel()
+        previewEntry = entry
+        previewAnimator = ValueAnimator.ofFloat(previewAlpha, 1f).apply {
+            duration = PREVIEW_FADE_IN_MS
+            addUpdateListener {
+                previewAlpha = it.animatedValue as Float
+                invalidate()
+            }
+            start()
+        }
+    }
+
+    private fun hidePreview() {
+        if (previewEntry == null && previewAlpha == 0f) return
+        previewAnimator?.cancel()
+        previewAnimator = ValueAnimator.ofFloat(previewAlpha, 0f).apply {
+            duration = PREVIEW_FADE_OUT_MS
+            addUpdateListener {
+                previewAlpha = it.animatedValue as Float
+                if (previewAlpha <= 0.01f) previewEntry = null
+                invalidate()
+            }
+            start()
+        }
+    }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val cornerRadius = resources.getDimension(R.dimen.key_corner_radius)
@@ -172,14 +255,24 @@ class KeyboardView @JvmOverloads constructor(
 
         for (entry in keyBounds) {
             val isSpecial = entry.key.type != KeyType.CHARACTER
-            val paint = when {
-                entry.key.isPrimary && entry.key == pressedKey -> keyPrimaryBgPressedPaint
-                entry.key.isPrimary -> keyPrimaryBgPaint
-                entry.key == pressedKey -> keyBgPressedPaint
-                isSpecial -> keySpecialBgPaint
-                else -> keyBgPaint
+            val basePaint = if (entry.key.isPrimary) keyPrimaryBgPaint else if (isSpecial) keySpecialBgPaint else keyBgPaint
+
+            val isAnimatingThisKey = entry.key == animatingKey && pressAlpha > 0f
+            // A tiny inward inset while pressed gives a soft "pushed in" feel instead of the
+            // key instantly flipping between two flat states.
+            val drawRect = if (isAnimatingThisKey) {
+                RectF(entry.rect).apply { inset(pressAlpha * 2f, pressAlpha * 2f) }
+            } else {
+                entry.rect
             }
-            canvas.drawRoundRect(entry.rect, cornerRadius, cornerRadius, paint)
+            canvas.drawRoundRect(drawRect, cornerRadius, cornerRadius, basePaint)
+
+            if (isAnimatingThisKey) {
+                val overlay = if (entry.key.isPrimary) keyPrimaryBgPressedPaint else keyBgPressedPaint
+                overlay.alpha = (pressAlpha * 255).toInt().coerceIn(0, 255)
+                canvas.drawRoundRect(drawRect, cornerRadius, cornerRadius, overlay)
+                overlay.alpha = 255
+            }
 
             val displayLabel = displayLabelFor(entry.key)
             keyTextPaint.color = when {
@@ -201,6 +294,11 @@ class KeyboardView @JvmOverloads constructor(
                 val hintY = entry.rect.top + (entry.rect.height() * 0.30f)
                 canvas.drawText(hint, hintX, hintY, hintTextPaint)
             }
+        }
+
+        // Enlarged key-preview bubble that rises above the finger while a character is held.
+        if (previewEntry != null && previewAlpha > 0f && showingPopupFor == null && !isGesturing) {
+            drawKeyPreview(canvas)
         }
 
         // Draw the live gesture trail while swiping.
@@ -234,6 +332,37 @@ class KeyboardView @JvmOverloads constructor(
         val ideal = entry.rect.centerX() - totalWidth / 2f
         val maxLeft = (width - totalWidth).coerceAtLeast(0f)
         return ideal.coerceIn(0f, maxLeft)
+    }
+
+    /** Draws the enlarged, fading-in bubble showing what's currently under the finger. */
+    private fun drawKeyPreview(canvas: Canvas) {
+        val entry = previewEntry ?: return
+        val bubbleWidth = entry.rect.width() * 1.3f
+        val bubbleHeight = entry.rect.height() * 1.6f
+        val rise = (1f - previewAlpha) * 14f
+        val bottom = entry.rect.top - 8f + rise
+        val top = bottom - bubbleHeight
+        val left = entry.rect.centerX() - bubbleWidth / 2f
+        val rect = RectF(left, top, left + bubbleWidth, bottom)
+
+        val alpha255 = (previewAlpha * 255).toInt().coerceIn(0, 255)
+        popupBgPaint.alpha = alpha255
+        canvas.drawRoundRect(rect, 14f, 14f, popupBgPaint)
+        popupBgPaint.alpha = 255
+
+        val label = displayLabelFor(entry.key)
+        val previousTextSize = popupTextPaint.textSize
+        popupTextPaint.textSize = resources.getDimension(R.dimen.key_text_size) * 1.3f
+        popupTextPaint.color = ContextCompat.getColor(context, R.color.kb_key_text)
+        popupTextPaint.alpha = alpha255
+        canvas.drawText(
+            label,
+            rect.centerX(),
+            rect.centerY() - (popupTextPaint.descent() + popupTextPaint.ascent()) / 2,
+            popupTextPaint
+        )
+        popupTextPaint.alpha = 255
+        popupTextPaint.textSize = previousTextSize
     }
 
     private fun drawPopup(canvas: Canvas, entry: KeyBoundsEntry) {
@@ -284,6 +413,7 @@ class KeyboardView @JvmOverloads constructor(
         pressedRect = entry.rect
         gestureStartKey = entry.key
         listener?.onKeyDownFeedback()
+        startPressAnimation(entry)
 
         if (entry.key.type == KeyType.CHARACTER && entry.key.label.length == 1 && entry.key.label[0].isLetter()) {
             gesturePoints = mutableListOf(KeyPoint(entry.key.label[0], entry.rect.centerX(), entry.rect.centerY()))
@@ -294,6 +424,7 @@ class KeyboardView @JvmOverloads constructor(
                 longPressTriggered = true
                 showingPopupFor = entry
                 popupSelectedIndex = 0
+                hidePreview()
                 invalidate()
             }
             longPressRunnable = runnable
@@ -331,6 +462,7 @@ class KeyboardView @JvmOverloads constructor(
 
         val startsOnLetter = gestureStartKey?.type == KeyType.CHARACTER
         if (swipeTypingEnabled && startsOnLetter && (dx > GESTURE_START_THRESHOLD || dy > GESTURE_START_THRESHOLD)) {
+            if (!isGesturing) hidePreview()
             isGesturing = true
         }
 
@@ -346,11 +478,13 @@ class KeyboardView @JvmOverloads constructor(
             }
             invalidate()
         } else {
-            // Update which key is visually "pressed" as the finger drags (without lifting).
+            // Update which key is visually "pressed" as the finger drags (without lifting),
+            // restarting the smooth press animation for whichever key it lands on.
             val entry = keyAt(event.x, event.y)
             if (entry != null && entry.key != pressedKey) {
                 pressedKey = entry.key
                 pressedRect = entry.rect
+                startPressAnimation(entry)
                 invalidate()
             }
         }
@@ -410,6 +544,7 @@ class KeyboardView @JvmOverloads constructor(
         backspaceRepeatRunnable?.let { removeCallbacks(it) }
         backspaceRepeatRunnable = null
         isBackspaceRepeating = false
+        endPressAnimation()
         invalidate()
     }
 
@@ -422,5 +557,9 @@ class KeyboardView @JvmOverloads constructor(
         private const val GESTURE_START_THRESHOLD = 40f
         private const val BACKSPACE_INITIAL_REPEAT_DELAY_MS = 400L
         private const val BACKSPACE_REPEAT_INTERVAL_MS = 60L
+        private const val PRESS_FADE_IN_MS = 55L
+        private const val PRESS_FADE_OUT_MS = 110L
+        private const val PREVIEW_FADE_IN_MS = 60L
+        private const val PREVIEW_FADE_OUT_MS = 90L
     }
 }
