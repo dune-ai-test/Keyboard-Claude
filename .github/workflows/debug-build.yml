@@ -1,10 +1,6 @@
 name: Debug Build
 
 on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
   workflow_dispatch:
 
 permissions:
@@ -38,7 +34,6 @@ jobs:
           retention-days: 30
 
       - name: Create Release v0.0.2
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v0.0.2
