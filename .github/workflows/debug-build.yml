@@ -26,17 +26,21 @@ jobs:
       - name: Build Debug APK
         run: gradle assembleDebug
 
+      - name: Get version name
+        id: version
+        run: echo "name=$(grep 'versionName' app/build.gradle.kts | sed 's/.*"\(.*\)".*/\1/')" >> "$GITHUB_OUTPUT"
+
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: debug-apk
+          name: debug-apk-v${{ steps.version.outputs.name }}
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 30
 
-      - name: Create Release v1.0.2
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.2
-          name: Release v1.0.2
+          tag_name: v${{ steps.version.outputs.name }}
+          name: Release v${{ steps.version.outputs.name }}
           generate_release_notes: true
           files: app/build/outputs/apk/debug/*.apk

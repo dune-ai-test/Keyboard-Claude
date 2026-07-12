@@ -4,11 +4,14 @@ import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.Rect
 import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
+import android.view.animation.DecelerateInterpolator
+import android.view.animation.OvershootInterpolator
 import androidx.core.content.ContextCompat
 import com.example.customkeyboard.R
 import com.example.customkeyboard.data.KeyModel
@@ -16,6 +19,7 @@ import com.example.customkeyboard.data.KeyType
 import com.example.customkeyboard.data.KeyboardLayout
 import com.example.customkeyboard.gesture.KeyPoint
 import kotlin.math.abs
+import kotlin.math.hypot
 
 /**
  * A high-performance custom keyboard view.
@@ -76,6 +80,7 @@ class KeyboardView @JvmOverloads constructor(
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
     }
+    private val ripplePaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
     private val textBounds = Rect()
     private val keyBounds = mutableListOf<KeyBoundsEntry>()
@@ -90,6 +95,18 @@ class KeyboardView @JvmOverloads constructor(
     private var pressAnimator: ValueAnimator? = null
     private var pressAlpha: Float = 0f
     private var animatingKey: KeyModel? = null
+
+    // A separate "press-in / bounce-out" scale value: eases toward a slight inset while held,
+    // then overshoots past rest on release for a springy, elastic pop rather than a flat stop.
+    private var pressScaleAnimator: ValueAnimator? = null
+    private var pressScale: Float = 0f
+
+    // Material-style expanding ink ripple centered on the actual touch point.
+    private var rippleAnimator: ValueAnimator? = null
+    private var rippleProgress: Float = 1f
+    private var rippleKey: KeyModel? = null
+    private var rippleCenterX = 0f
+    private var rippleCenterY = 0f
 
     // Enlarged "key preview" bubble that pops up above the finger while a character key is
     // held — the classic tactile-feeling feedback most keyboards use, absent before now.
@@ -128,6 +145,7 @@ class KeyboardView @JvmOverloads constructor(
         popupBgPaint.color = ContextCompat.getColor(context, R.color.kb_popup_background)
         popupTextPaint.color = ContextCompat.getColor(context, R.color.kb_key_text)
         gesturePathPaint.color = ContextCompat.getColor(context, R.color.kb_accent)
+        ripplePaint.color = ContextCompat.getColor(context, R.color.kb_key_text)
         setBackgroundColor(ContextCompat.getColor(context, R.color.kb_background))
         invalidate()
     }
@@ -140,6 +158,8 @@ class KeyboardView @JvmOverloads constructor(
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         pressAnimator?.cancel()
+        pressScaleAnimator?.cancel()
+        rippleAnimator?.cancel()
         previewAnimator?.cancel()
         longPressRunnable?.let { removeCallbacks(it) }
         backspaceRepeatRunnable?.let { removeCallbacks(it) }
@@ -186,7 +206,7 @@ class KeyboardView @JvmOverloads constructor(
 
     /** Starts (or restarts, if the finger slid onto a new key) the smooth press-highlight
      *  crossfade and, for ordinary character keys, the enlarged preview bubble. */
-    private fun startPressAnimation(entry: KeyBoundsEntry) {
+    private fun startPressAnimation(entry: KeyBoundsEntry, touchX: Float, touchY: Float) {
         pressAnimator?.cancel()
         animatingKey = entry.key
         pressAnimator = ValueAnimator.ofFloat(pressAlpha, 1f).apply {
@@ -198,10 +218,45 @@ class KeyboardView @JvmOverloads constructor(
             start()
         }
 
-        if (entry.key.type == KeyType.CHARACTER || entry.key.type == KeyType.COMMA || entry.key.type == KeyType.PERIOD) {
+        pressScaleAnimator?.cancel()
+        pressScaleAnimator = ValueAnimator.ofFloat(pressScale, 1f).apply {
+            duration = PRESS_SCALE_IN_MS
+            interpolator = DecelerateInterpolator()
+            addUpdateListener {
+                pressScale = it.animatedValue as Float
+                invalidate()
+            }
+            start()
+        }
+
+        startRipple(entry, touchX, touchY)
+
+        val previewEligible = entry.key.type == KeyType.CHARACTER || entry.key.type == KeyType.COMMA ||
+            entry.key.type == KeyType.PERIOD || entry.key.type == KeyType.SHIFT || entry.key.type == KeyType.BACKSPACE
+        if (previewEligible) {
             showPreview(entry)
         } else {
             hidePreview()
+        }
+    }
+
+    /** Kicks off a Material-style expanding ink ripple centered on the actual touch point,
+     *  clipped to the key's own rounded-rect bounds. Plays to completion on its own timeline
+     *  regardless of when the finger lifts, like a normal ripple. */
+    private fun startRipple(entry: KeyBoundsEntry, touchX: Float, touchY: Float) {
+        rippleAnimator?.cancel()
+        rippleKey = entry.key
+        rippleCenterX = touchX
+        rippleCenterY = touchY
+        rippleProgress = 0f
+        rippleAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = RIPPLE_DURATION_MS
+            interpolator = DecelerateInterpolator()
+            addUpdateListener {
+                rippleProgress = it.animatedValue as Float
+                invalidate()
+            }
+            start()
         }
     }
 
@@ -213,6 +268,19 @@ class KeyboardView @JvmOverloads constructor(
             duration = PRESS_FADE_OUT_MS
             addUpdateListener {
                 pressAlpha = it.animatedValue as Float
+                invalidate()
+            }
+            start()
+        }
+
+        // The bounce: scale overshoots slightly past rest before settling, giving the key an
+        // elastic "pop" on release instead of stopping dead.
+        pressScaleAnimator?.cancel()
+        pressScaleAnimator = ValueAnimator.ofFloat(pressScale, 0f).apply {
+            duration = PRESS_SCALE_OUT_MS
+            interpolator = OvershootInterpolator(BOUNCE_TENSION)
+            addUpdateListener {
+                pressScale = it.animatedValue as Float
                 invalidate()
             }
             start()
@@ -257,21 +325,36 @@ class KeyboardView @JvmOverloads constructor(
             val isSpecial = entry.key.type != KeyType.CHARACTER
             val basePaint = if (entry.key.isPrimary) keyPrimaryBgPaint else if (isSpecial) keySpecialBgPaint else keyBgPaint
 
-            val isAnimatingThisKey = entry.key == animatingKey && pressAlpha > 0f
-            // A tiny inward inset while pressed gives a soft "pushed in" feel instead of the
-            // key instantly flipping between two flat states.
+            val isAnimatingThisKey = entry.key == animatingKey && (pressAlpha > 0f || pressScale != 0f)
+            // The inset drives the "pushed in" press feel; on release pressScale briefly
+            // overshoots slightly negative (via OvershootInterpolator), which pops the key
+            // just past its resting size for an elastic bounce instead of a dead stop. Clamped
+            // so that pop never eats into the (small) gap between adjacent keys.
+            val inset = (pressScale * 2.5f).coerceAtLeast(-1f)
             val drawRect = if (isAnimatingThisKey) {
-                RectF(entry.rect).apply { inset(pressAlpha * 2f, pressAlpha * 2f) }
+                RectF(entry.rect).apply { inset(inset, inset) }
             } else {
                 entry.rect
             }
             canvas.drawRoundRect(drawRect, cornerRadius, cornerRadius, basePaint)
 
-            if (isAnimatingThisKey) {
+            if (isAnimatingThisKey && pressAlpha > 0f) {
                 val overlay = if (entry.key.isPrimary) keyPrimaryBgPressedPaint else keyBgPressedPaint
                 overlay.alpha = (pressAlpha * 255).toInt().coerceIn(0, 255)
                 canvas.drawRoundRect(drawRect, cornerRadius, cornerRadius, overlay)
                 overlay.alpha = 255
+            }
+
+            // Expanding ink ripple, clipped to this key's rounded bounds.
+            if (rippleKey == entry.key && rippleProgress < 1f) {
+                val maxRadius = hypot(entry.rect.width(), entry.rect.height()) / 2f
+                val radius = maxRadius * rippleProgress
+                canvas.save()
+                val clip = Path().apply { addRoundRect(entry.rect, cornerRadius, cornerRadius, Path.Direction.CW) }
+                canvas.clipPath(clip)
+                ripplePaint.alpha = ((1f - rippleProgress) * RIPPLE_MAX_ALPHA).toInt().coerceIn(0, 255)
+                canvas.drawCircle(rippleCenterX, rippleCenterY, radius, ripplePaint)
+                canvas.restore()
             }
 
             val displayLabel = displayLabelFor(entry.key)
@@ -303,7 +386,7 @@ class KeyboardView @JvmOverloads constructor(
 
         // Draw the live gesture trail while swiping.
         if (isGesturing && gesturePoints.size > 1) {
-            val path = android.graphics.Path()
+            val path = Path()
             path.moveTo(gesturePoints[0].cx, gesturePoints[0].cy)
             for (i in 1 until gesturePoints.size) path.lineTo(gesturePoints[i].cx, gesturePoints[i].cy)
             canvas.drawPath(path, gesturePathPaint)
@@ -413,7 +496,7 @@ class KeyboardView @JvmOverloads constructor(
         pressedRect = entry.rect
         gestureStartKey = entry.key
         listener?.onKeyDownFeedback()
-        startPressAnimation(entry)
+        startPressAnimation(entry, event.x, event.y)
 
         if (entry.key.type == KeyType.CHARACTER && entry.key.label.length == 1 && entry.key.label[0].isLetter()) {
             gesturePoints = mutableListOf(KeyPoint(entry.key.label[0], entry.rect.centerX(), entry.rect.centerY()))
@@ -484,7 +567,7 @@ class KeyboardView @JvmOverloads constructor(
             if (entry != null && entry.key != pressedKey) {
                 pressedKey = entry.key
                 pressedRect = entry.rect
-                startPressAnimation(entry)
+                startPressAnimation(entry, event.x, event.y)
                 invalidate()
             }
         }
@@ -559,6 +642,11 @@ class KeyboardView @JvmOverloads constructor(
         private const val BACKSPACE_REPEAT_INTERVAL_MS = 60L
         private const val PRESS_FADE_IN_MS = 55L
         private const val PRESS_FADE_OUT_MS = 110L
+        private const val PRESS_SCALE_IN_MS = 55L
+        private const val PRESS_SCALE_OUT_MS = 200L
+        private const val BOUNCE_TENSION = 3.5f
+        private const val RIPPLE_DURATION_MS = 260L
+        private const val RIPPLE_MAX_ALPHA = 70
         private const val PREVIEW_FADE_IN_MS = 60L
         private const val PREVIEW_FADE_OUT_MS = 90L
     }
