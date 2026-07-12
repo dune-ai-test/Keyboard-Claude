@@ -1,19 +1,22 @@
 <resources>
-    <!-- Dark theme keyboard palette -->
-    <color name="kb_background">#1C1C1E</color>
+    <!-- Dark theme keyboard palette (matches reference: near-black background, dark keys, teal accent) -->
+    <color name="kb_background">#000000</color>
     <color name="kb_key_background">#2C2C2E</color>
-    <color name="kb_key_background_pressed">#3A3A3C</color>
-    <color name="kb_key_special_background">#141416</color>
+    <color name="kb_key_background_pressed">#48484A</color>
+    <color name="kb_key_special_background">#1C1C1E</color>
     <color name="kb_key_text">#F2F2F7</color>
-    <color name="kb_key_subtext">#8E8E93</color>
-    <color name="kb_accent">#7D9BFF</color>
+    <color name="kb_key_subtext">#9A9AA0</color>
+    <color name="kb_key_hint">#8E8E93</color>
+    <color name="kb_accent">#5CD9C4</color>
     <color name="kb_key_shadow">#66000000</color>
-    <color name="kb_popup_background">#2C2C2E</color>
-    <color name="kb_divider">#3A3A3C</color>
+    <color name="kb_popup_background">#3A3A3C</color>
+    <color name="kb_divider">#2C2C2E</color>
+    <color name="kb_toolbar_icon">#B8B8BD</color>
 
-    <color name="app_primary">#7D9BFF</color>
-    <color name="app_primary_variant">#4C6FFF</color>
+    <color name="app_primary">#5CD9C4</color>
+    <color name="app_primary_variant">#3EBBA8</color>
     <color name="app_background">#121214</color>
     <color name="app_surface">#1C1C1E</color>
     <color name="app_on_surface">#F2F2F7</color>
 </resources>
+

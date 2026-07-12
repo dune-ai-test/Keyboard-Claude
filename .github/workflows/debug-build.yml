@@ -33,3 +33,12 @@ jobs:
           name: debug-apk
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 30
+
+      - name: Create Release v0.0.1
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.0.1
+          name: Release v0.0.1
+          generate_release_notes: true
+          files: app/build/outputs/apk/debug/*.apk

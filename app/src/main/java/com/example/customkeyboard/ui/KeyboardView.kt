@@ -63,7 +63,10 @@ class KeyboardView @JvmOverloads constructor(
     private val keyBgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val keyBgPressedPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val keySpecialBgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val keyPrimaryBgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val keyPrimaryBgPressedPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val keyTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
+    private val hintTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
     private val popupBgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val popupTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
     private val gesturePathPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -101,7 +104,11 @@ class KeyboardView @JvmOverloads constructor(
         keyBgPaint.color = ContextCompat.getColor(context, R.color.kb_key_background)
         keyBgPressedPaint.color = ContextCompat.getColor(context, R.color.kb_key_background_pressed)
         keySpecialBgPaint.color = ContextCompat.getColor(context, R.color.kb_key_special_background)
+        keyPrimaryBgPaint.color = ContextCompat.getColor(context, R.color.kb_accent)
+        keyPrimaryBgPressedPaint.color = ContextCompat.getColor(context, R.color.kb_accent)
+        keyPrimaryBgPressedPaint.alpha = 180
         keyTextPaint.color = ContextCompat.getColor(context, R.color.kb_key_text)
+        hintTextPaint.color = ContextCompat.getColor(context, R.color.kb_key_hint)
         popupBgPaint.color = ContextCompat.getColor(context, R.color.kb_popup_background)
         popupTextPaint.color = ContextCompat.getColor(context, R.color.kb_key_text)
         gesturePathPaint.color = ContextCompat.getColor(context, R.color.kb_accent)
@@ -153,10 +160,13 @@ class KeyboardView @JvmOverloads constructor(
         super.onDraw(canvas)
         val cornerRadius = resources.getDimension(R.dimen.key_corner_radius)
         keyTextPaint.textSize = resources.getDimension(R.dimen.key_text_size)
+        hintTextPaint.textSize = resources.getDimension(R.dimen.key_subtext_size)
 
         for (entry in keyBounds) {
             val isSpecial = entry.key.type != KeyType.CHARACTER
             val paint = when {
+                entry.key.isPrimary && entry.key == pressedKey -> keyPrimaryBgPressedPaint
+                entry.key.isPrimary -> keyPrimaryBgPaint
                 entry.key == pressedKey -> keyBgPressedPaint
                 isSpecial -> keySpecialBgPaint
                 else -> keyBgPaint
@@ -164,19 +174,25 @@ class KeyboardView @JvmOverloads constructor(
             canvas.drawRoundRect(entry.rect, cornerRadius, cornerRadius, paint)
 
             val displayLabel = displayLabelFor(entry.key)
-            if (entry.key.type == KeyType.SHIFT) {
-                keyTextPaint.color = if (capsLockActive || shiftActive)
+            keyTextPaint.color = when {
+                entry.key.isPrimary -> ContextCompat.getColor(context, R.color.kb_background)
+                entry.key.type == KeyType.SHIFT && (capsLockActive || shiftActive) ->
                     ContextCompat.getColor(context, R.color.kb_accent)
-                else
-                    ContextCompat.getColor(context, R.color.kb_key_text)
-            } else {
-                keyTextPaint.color = ContextCompat.getColor(context, R.color.kb_key_text)
+                else -> ContextCompat.getColor(context, R.color.kb_key_text)
             }
 
             keyTextPaint.getTextBounds(displayLabel, 0, displayLabel.length, textBounds)
             val cx = entry.rect.centerX()
             val cy = entry.rect.centerY() - textBounds.exactCenterY()
             canvas.drawText(displayLabel, cx, cy, keyTextPaint)
+
+            // Small top-right corner hint (preview of the long-press character), letters only.
+            if (!entry.key.isPrimary && entry.key.type == KeyType.CHARACTER && entry.key.hintLabel != null) {
+                val hint = entry.key.hintLabel
+                val hintX = entry.rect.right - (entry.rect.width() * 0.22f)
+                val hintY = entry.rect.top + (entry.rect.height() * 0.30f)
+                canvas.drawText(hint, hintX, hintY, hintTextPaint)
+            }
         }
 
         // Draw the live gesture trail while swiping.
@@ -197,7 +213,7 @@ class KeyboardView @JvmOverloads constructor(
         }
         return when (key.type) {
             KeyType.SPACE -> ""
-            KeyType.SHIFT -> if (capsLockActive) "⇪" else "⇧"
+            KeyType.SHIFT -> if (capsLockActive) "⬆" else "⬆"
             else -> key.label
         }
     }

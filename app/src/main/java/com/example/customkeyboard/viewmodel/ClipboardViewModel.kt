@@ -30,4 +30,6 @@ class ClipboardViewModel(application: Application) : AndroidViewModel(applicatio
     fun clearUnpinned() = viewModelScope.launch { repository.clearUnpinned() }
 
     fun clearAll() = viewModelScope.launch { repository.clearAll() }
+
+    fun reorder(items: List<ClipboardItem>) = viewModelScope.launch { repository.reorder(items) }
 }

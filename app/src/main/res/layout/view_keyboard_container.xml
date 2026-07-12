@@ -1,14 +1,67 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/keyboardRoot"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
     android:background="@color/kb_background">
 
-    <!-- Suggestion / prediction / clipboard strip -->
+    <!-- Top toolbar: switch keyboard, settings, emoji, undo, clipboard, cursor move, voice -->
+    <LinearLayout
+        android:id="@+id/toolbarRow"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/toolbar_height"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@color/kb_background"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp">
+
+        <ImageButton
+            android:id="@+id/btnSwitchKeyboard"
+            style="@style/ToolbarIconButton"
+            android:src="@drawable/ic_grid"
+            android:contentDescription="Switch keyboard" />
+
+        <ImageButton
+            android:id="@+id/btnSettings"
+            style="@style/ToolbarIconButton"
+            android:src="@drawable/ic_settings"
+            android:contentDescription="Keyboard settings" />
+
+        <ImageButton
+            android:id="@+id/btnEmoji"
+            style="@style/ToolbarIconButton"
+            android:src="@drawable/ic_emoji"
+            android:contentDescription="Emoji" />
+
+        <ImageButton
+            android:id="@+id/btnUndo"
+            style="@style/ToolbarIconButton"
+            android:src="@drawable/ic_undo"
+            android:contentDescription="Undo" />
+
+        <ImageButton
+            android:id="@+id/btnClipboard"
+            style="@style/ToolbarIconButton"
+            android:src="@drawable/ic_clipboard"
+            android:contentDescription="@string/clipboard_manager" />
+
+        <ImageButton
+            android:id="@+id/btnCursorMove"
+            style="@style/ToolbarIconButton"
+            android:src="@drawable/ic_cursor_move"
+            android:contentDescription="Move cursor" />
+
+        <ImageButton
+            android:id="@+id/btnVoice"
+            style="@style/ToolbarIconButton"
+            android:src="@drawable/ic_mic"
+            android:contentDescription="Voice typing" />
+    </LinearLayout>
+
+    <!-- Suggestion / prediction strip (hidden while the toolbar/clipboard panel is in use) -->
     <LinearLayout
         android:id="@+id/suggestionBar"
         android:layout_width="match_parent"
@@ -59,43 +112,28 @@
             android:singleLine="true"
             android:ellipsize="end"
             tools:text="engine" />
-
-        <ImageButton
-            android:id="@+id/clipboardButton"
-            android:layout_width="40dp"
-            android:layout_height="match_parent"
-            android:background="@drawable/bg_suggestion_ripple"
-            android:src="@drawable/ic_clipboard"
-            android:contentDescription="@string/clipboard_manager"
-            android:tint="@color/kb_key_subtext" />
     </LinearLayout>
-
-    <!-- Optional inline clipboard history row, toggled visible by the IME -->
-    <HorizontalScrollView
-        android:id="@+id/clipboardStripScroll"
-        android:layout_width="match_parent"
-        android:layout_height="@dimen/suggestion_bar_height"
-        android:visibility="gone"
-        android:scrollbars="none">
-
-        <LinearLayout
-            android:id="@+id/clipboardStrip"
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent"
-            android:orientation="horizontal"
-            android:paddingStart="6dp"
-            android:paddingEnd="6dp"
-            android:gravity="center_vertical" />
-    </HorizontalScrollView>
 
     <View
         android:layout_width="match_parent"
         android:layout_height="1dp"
         android:background="@color/kb_divider" />
 
-    <com.example.customkeyboard.ui.KeyboardView
-        android:id="@+id/keyboardView"
+    <!-- Main content area: either the keyboard rows or the full clipboard panel -->
+    <FrameLayout
+        android:id="@+id/contentArea"
         android:layout_width="match_parent"
-        android:layout_height="220dp" />
+        android:layout_height="220dp">
+
+        <com.example.customkeyboard.ui.KeyboardView
+            android:id="@+id/keyboardView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <include
+            android:id="@+id/clipboardPanel"
+            layout="@layout/panel_clipboard"
+            android:visibility="gone" />
+    </FrameLayout>
 
 </LinearLayout>

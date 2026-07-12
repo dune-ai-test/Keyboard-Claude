@@ -6,14 +6,17 @@
     <color name="kb_key_special_background">#DEDEE3</color>
     <color name="kb_key_text">#1C1C1E</color>
     <color name="kb_key_subtext">#8A8A8E</color>
-    <color name="kb_accent">#4C6FFF</color>
+    <color name="kb_key_hint">#9A9A9E</color>
+    <color name="kb_accent">#2FA893</color>
     <color name="kb_key_shadow">#33000000</color>
     <color name="kb_popup_background">#FFFFFF</color>
     <color name="kb_divider">#E5E5EA</color>
+    <color name="kb_toolbar_icon">#6E6E73</color>
 
-    <color name="app_primary">#4C6FFF</color>
-    <color name="app_primary_variant">#3752CC</color>
+    <color name="app_primary">#2FA893</color>
+    <color name="app_primary_variant">#22806F</color>
     <color name="app_background">#F5F5F7</color>
     <color name="app_surface">#FFFFFF</color>
     <color name="app_on_surface">#1C1C1E</color>
 </resources>
+

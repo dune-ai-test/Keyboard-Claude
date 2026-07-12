@@ -11,8 +11,8 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface ClipboardDao {
 
-    /** Pinned items always first (most recently pinned first), then unpinned by recency. */
-    @Query("SELECT * FROM clipboard_items ORDER BY isPinned DESC, timestamp DESC")
+    /** Pinned items always first, each group ordered by the user's manual drag-reorder position. */
+    @Query("SELECT * FROM clipboard_items ORDER BY isPinned DESC, sortOrder DESC")
     fun observeAll(): Flow<List<ClipboardItem>>
 
     @Query("SELECT * FROM clipboard_items WHERE text = :text LIMIT 1")
@@ -23,6 +23,10 @@ interface ClipboardDao {
 
     @Update
     suspend fun update(item: ClipboardItem)
+
+    /** Batch-persists new manual positions after a drag-reorder gesture. */
+    @Update
+    suspend fun updateAll(items: List<ClipboardItem>)
 
     @Delete
     suspend fun delete(item: ClipboardItem)

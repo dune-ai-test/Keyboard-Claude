@@ -3,28 +3,34 @@ package com.example.customkeyboard.service
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.inputmethodservice.InputMethodService
 import android.text.InputType
+import android.view.KeyEvent
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
-import android.view.inputmethod.InputConnection
-import android.widget.HorizontalScrollView
+import android.view.inputmethod.InputMethodManager
+import android.widget.FrameLayout
 import android.widget.ImageButton
-import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.view.isVisible
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
-import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import com.example.customkeyboard.R
 import com.example.customkeyboard.data.Dictionary
 import com.example.customkeyboard.data.KeyModel
+import com.example.customkeyboard.data.KeyRow
 import com.example.customkeyboard.data.KeyType
+import com.example.customkeyboard.data.KeyboardLayout
 import com.example.customkeyboard.data.KeyboardLayouts
 import com.example.customkeyboard.data.KeyboardSettings
 import com.example.customkeyboard.data.SettingsRepository
@@ -32,10 +38,13 @@ import com.example.customkeyboard.data.db.ClipboardItem
 import com.example.customkeyboard.data.db.ClipboardRepository
 import com.example.customkeyboard.gesture.GestureTypingDecoder
 import com.example.customkeyboard.gesture.KeyPoint
+import com.example.customkeyboard.ui.ClipboardAdapter
 import com.example.customkeyboard.ui.KeyboardView
+import com.example.customkeyboard.ui.SettingsActivity
 import com.example.customkeyboard.util.HapticUtil
 import com.example.customkeyboard.util.SoundUtil
 import com.example.customkeyboard.voice.VoiceInputHelper
+import kotlin.math.abs
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
@@ -43,9 +52,11 @@ import kotlinx.coroutines.launch
 /**
  * The heart of the keyboard app: an [InputMethodService] that renders the custom [KeyboardView],
  * wires up shift/caps/backspace/enter/space handling, number & symbol layout switching,
- * auto-correction & word prediction, swipe (gesture) typing, voice typing, and a live clipboard
- * strip — following an MVVM-style separation where this class is a thin "View controller" and
- * all state/logic lives in repositories ([SettingsRepository], [ClipboardRepository], [Dictionary]).
+ * auto-correction & word prediction, swipe (gesture) typing, voice typing, an emoji page, a
+ * one-level undo, cursor-drag, and a full in-keyboard clipboard manager panel (pin / delete /
+ * drag-to-reorder) — following an MVVM-style separation where this class is a thin "View
+ * controller" and all state/logic lives in repositories ([SettingsRepository],
+ * [ClipboardRepository], [Dictionary]).
  *
  * Implements [LifecycleOwner] / [SavedStateRegistryOwner] manually since [InputMethodService] is
  * not a native AndroidX lifecycle owner, which is required to safely collect Kotlin Flows here.
@@ -70,17 +81,32 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
 
     // --- Views ---
     private var rootView: View? = null
+    private var contentArea: FrameLayout? = null
     private var keyboardView: KeyboardView? = null
     private var suggestion1: TextView? = null
     private var suggestion2: TextView? = null
     private var suggestion3: TextView? = null
-    private var clipboardButton: ImageButton? = null
-    private var clipboardStripScroll: HorizontalScrollView? = null
-    private var clipboardStrip: LinearLayout? = null
+
+    // Toolbar
+    private var btnSwitchKeyboard: ImageButton? = null
+    private var btnSettings: ImageButton? = null
+    private var btnEmoji: ImageButton? = null
+    private var btnUndo: ImageButton? = null
+    private var btnClipboard: ImageButton? = null
+    private var btnCursorMove: ImageButton? = null
+    private var btnVoice: ImageButton? = null
+
+    // Clipboard panel
+    private var clipboardPanel: View? = null
+    private var clipboardRecyclerView: RecyclerView? = null
+    private var clipboardEmptyText: TextView? = null
+    private var clipboardAdapter: ClipboardAdapter? = null
+    private var isClipboardPanelOpen = false
 
     // --- Keyboard state ---
-    private enum class Page { LETTERS, NUMBERS, SYMBOLS }
+    private enum class Page { LETTERS, NUMBERS, SYMBOLS, EMOJI }
     private var currentPage = Page.LETTERS
+    private var pageBeforeEmoji = Page.LETTERS
     private var shiftActive = false
     private var capsLockActive = false
     private var lastShiftTapTime = 0L
@@ -89,6 +115,12 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
     private var lastCommittedWord: String = ""
     private var isPasswordField = false
     private var isVoiceListening = false
+
+    // One-level undo: remembers the most recent text this IME inserted so it can be reverted.
+    private var lastInsertion: String = ""
+
+    // Cursor-drag state (dragging the cursor-move toolbar button left/right).
+    private var cursorDragStartX = 0f
 
     override fun onCreate() {
         super.onCreate()
@@ -126,13 +158,23 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
         val view = inflater.inflate(R.layout.view_keyboard_container, null)
         rootView = view
 
+        contentArea = view.findViewById(R.id.contentArea)
         keyboardView = view.findViewById(R.id.keyboardView)
         suggestion1 = view.findViewById(R.id.suggestion1)
         suggestion2 = view.findViewById(R.id.suggestion2)
         suggestion3 = view.findViewById(R.id.suggestion3)
-        clipboardButton = view.findViewById(R.id.clipboardButton)
-        clipboardStripScroll = view.findViewById(R.id.clipboardStripScroll)
-        clipboardStrip = view.findViewById(R.id.clipboardStrip)
+
+        btnSwitchKeyboard = view.findViewById(R.id.btnSwitchKeyboard)
+        btnSettings = view.findViewById(R.id.btnSettings)
+        btnEmoji = view.findViewById(R.id.btnEmoji)
+        btnUndo = view.findViewById(R.id.btnUndo)
+        btnClipboard = view.findViewById(R.id.btnClipboard)
+        btnCursorMove = view.findViewById(R.id.btnCursorMove)
+        btnVoice = view.findViewById(R.id.btnVoice)
+
+        clipboardPanel = view.findViewById(R.id.clipboardPanel)
+        clipboardRecyclerView = view.findViewById(R.id.clipboardRecyclerView)
+        clipboardEmptyText = view.findViewById(R.id.clipboardEmptyText)
 
         keyboardView?.applyThemeColors()
         keyboardView?.swipeTypingEnabled = currentSettings.swipeTypingEnabled
@@ -149,7 +191,8 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
             }
         }
 
-        clipboardButton?.setOnClickListener { toggleClipboardStrip() }
+        setupToolbar()
+        setupClipboardPanel()
         setActiveLayout(Page.LETTERS)
         observeClipboardHistory()
 
@@ -169,9 +212,11 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
                 variation == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
             ) || cls == InputType.TYPE_CLASS_NUMBER && variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD
 
+        closeClipboardPanel()
         // Privacy: never learn words or suggest predictions inside password fields.
         clearSuggestions()
         composingWord.clear()
+        lastInsertion = ""
         shiftActive = shouldAutoCapitalize(info)
         capsLockActive = false
         updateShiftVisual()
@@ -191,6 +236,62 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
         soundUtil.release()
     }
 
+    /** Scales the overall keyboard height (rows area) per the user's height preference. */
+    private fun applyKeyboardHeight(percent: Float) {
+        val content = contentArea ?: return
+        val baseHeightPx = (resources.displayMetrics.density * BASE_KEYBOARD_HEIGHT_DP).toInt()
+        val targetHeight = (baseHeightPx * percent).toInt()
+        val params = content.layoutParams
+        if (params != null) {
+            params.height = targetHeight
+            content.layoutParams = params
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Toolbar
+    // ---------------------------------------------------------------------------------------
+
+    private fun setupToolbar() {
+        btnSwitchKeyboard?.setOnClickListener {
+            val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.showInputMethodPicker()
+        }
+        btnSettings?.setOnClickListener {
+            val intent = Intent(this, SettingsActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+        }
+        btnEmoji?.setOnClickListener { toggleEmojiPage() }
+        btnUndo?.setOnClickListener { performUndo() }
+        btnClipboard?.setOnClickListener { toggleClipboardPanel() }
+        btnVoice?.setOnClickListener { toggleVoiceTyping() }
+
+        btnCursorMove?.setOnTouchListener { _, event ->
+            handleCursorDrag(event)
+            true
+        }
+    }
+
+    private fun handleCursorDrag(event: MotionEvent) {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                cursorDragStartX = event.x
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val delta = event.x - cursorDragStartX
+                val steps = (delta / CURSOR_DRAG_STEP_PX).toInt()
+                if (steps != 0) {
+                    repeat(abs(steps)) {
+                        sendDownUpKeyEvents(if (steps > 0) KeyEvent.KEYCODE_DPAD_RIGHT else KeyEvent.KEYCODE_DPAD_LEFT)
+                    }
+                    cursorDragStartX = event.x
+                }
+            }
+        }
+    }
+
     // ---------------------------------------------------------------------------------------
     // Key handling
     // ---------------------------------------------------------------------------------------
@@ -208,7 +309,7 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
             KeyType.NUMBERS -> setActiveLayout(Page.NUMBERS)
             KeyType.SYMBOLS -> setActiveLayout(Page.SYMBOLS)
             KeyType.LETTERS -> setActiveLayout(Page.LETTERS)
-            KeyType.EMOJI -> handleCommitText("😀", false) // simplified: full emoji picker could extend this
+            KeyType.EMOJI -> toggleEmojiPage()
             KeyType.VOICE -> toggleVoiceTyping()
         }
     }
@@ -217,6 +318,7 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
     private fun handleCommitText(text: String, isWordChar: Boolean) {
         val ic = currentInputConnection ?: return
         ic.commitText(text, 1)
+        lastInsertion = text
 
         if (isWordChar && text.length == 1 && text[0].isLetterOrDigit()) {
             composingWord.append(text)
@@ -233,15 +335,6 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
 
     private fun handleSpace() {
         val ic = currentInputConnection ?: return
-
-        // Double-space-to-period convenience feature.
-        if (currentSettings.doubleSpacePeriod) {
-            val before = ic.getTextBeforeCursor(2, 0)?.toString().orEmpty()
-            if (before == "  " || (before.length == 2 && before[1] == ' ' && before[0] != ' ' && composingWord.isEmpty())) {
-                // handled below via lastTwoChars check instead for correctness
-            }
-        }
-
         val beforeCursor = ic.getTextBeforeCursor(1, 0)?.toString()
         val wordToFinalize = composingWord.toString()
 
@@ -251,10 +344,12 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
             // Replace the previously typed trailing space with ". "
             ic.deleteSurroundingText(1, 0)
             ic.commitText(". ", 1)
+            lastInsertion = ". "
             shiftActive = true
             updateShiftVisual()
         } else {
             ic.commitText(" ", 1)
+            lastInsertion = " "
         }
         updateSuggestions()
     }
@@ -265,6 +360,7 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
             composingWord.deleteCharAt(composingWord.length - 1)
         }
         ic.deleteSurroundingText(1, 0)
+        lastInsertion = ""
         updateSuggestions()
     }
 
@@ -280,7 +376,10 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
             }
             else -> false
         }
-        if (!handled) ic.commitText("\n", 1)
+        if (!handled) {
+            ic.commitText("\n", 1)
+            lastInsertion = "\n"
+        }
     }
 
     private fun handleShiftTap() {
@@ -317,16 +416,17 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
             textBefore.trimEnd().endsWith("!") || textBefore.trimEnd().endsWith("?")
     }
 
-    /** Scales the overall keyboard height (rows area) per the user's height preference. */
-    private fun applyKeyboardHeight(percent: Float) {
-        val kv = keyboardView ?: return
-        val baseHeightPx = (resources.displayMetrics.density * BASE_KEYBOARD_HEIGHT_DP).toInt()
-        val targetHeight = (baseHeightPx * percent).toInt()
-        val params = kv.layoutParams
-        if (params != null) {
-            params.height = targetHeight
-            kv.layoutParams = params
-        }
+    // ---------------------------------------------------------------------------------------
+    // Undo
+    // ---------------------------------------------------------------------------------------
+
+    private fun performUndo() {
+        val ic = currentInputConnection ?: return
+        if (lastInsertion.isEmpty()) return
+        ic.deleteSurroundingText(lastInsertion.length, 0)
+        lastInsertion = ""
+        composingWord.clear()
+        updateSuggestions()
     }
 
     // ---------------------------------------------------------------------------------------
@@ -339,8 +439,19 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
             Page.LETTERS -> KeyboardLayouts.letters()
             Page.NUMBERS -> KeyboardLayouts.numbers()
             Page.SYMBOLS -> KeyboardLayouts.symbols()
+            Page.EMOJI -> KeyboardLayouts.letters() // placeholder grid swapped below
         }
         updateShiftVisual()
+    }
+
+    private fun toggleEmojiPage() {
+        if (currentPage == Page.EMOJI) {
+            setActiveLayout(pageBeforeEmoji)
+        } else {
+            pageBeforeEmoji = currentPage
+            currentPage = Page.EMOJI
+            keyboardView?.layoutModel = EMOJI_LAYOUT
+        }
     }
 
     // ---------------------------------------------------------------------------------------
@@ -378,6 +489,7 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
         val ic = currentInputConnection ?: return
         ic.deleteSurroundingText(original.length, 0)
         ic.commitText(replacement, 1)
+        lastInsertion = replacement
     }
 
     private fun matchCase(original: String, correction: String): String = when {
@@ -412,6 +524,7 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
         }
         val cased = if (shiftActive || capsLockActive) word.replaceFirstChar { it.uppercase() } else word
         ic.commitText("$cased ", 1)
+        lastInsertion = "$cased "
         learnWord(word, word)
         composingWord.clear()
         if (!capsLockActive) { shiftActive = false; updateShiftVisual() }
@@ -438,6 +551,7 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
         val best = results.first()
         val cased = if (shiftActive || capsLockActive) best.replaceFirstChar { it.uppercase() } else best
         ic.commitText("$cased ", 1)
+        lastInsertion = "$cased "
         learnWord(best, best)
 
         // Populate suggestion strip with the alternates so the user can tap-correct.
@@ -450,6 +564,7 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
                 s?.let {
                     ic.deleteSurroundingText(best.length + 1, 0)
                     ic.commitText("$it ", 1)
+                    lastInsertion = "$it "
                     learnWord(it, it)
                 }
             }
@@ -477,6 +592,7 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
             },
             onFinalResult = { finalText ->
                 currentInputConnection?.commitText("$finalText ", 1)
+                lastInsertion = "$finalText "
                 isVoiceListening = false
                 clearSuggestions()
             },
@@ -489,43 +605,59 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
     }
 
     // ---------------------------------------------------------------------------------------
-    // Clipboard manager strip
+    // Clipboard manager panel (full in-keyboard view, not just a strip)
     // ---------------------------------------------------------------------------------------
 
-    private fun observeClipboardHistory() {
-        clipboardRepository.history.onEach { items -> renderClipboardStrip(items) }.launchIn(lifecycleScope)
-    }
+    private fun setupClipboardPanel() {
+        val panel = clipboardPanel ?: return
+        val recycler = clipboardRecyclerView ?: return
 
-    private fun toggleClipboardStrip() {
-        val scroll = clipboardStripScroll ?: return
-        scroll.isVisible = !scroll.isVisible
-    }
-
-    private fun renderClipboardStrip(items: List<ClipboardItem>) {
-        val strip = clipboardStrip ?: return
-        strip.removeAllViews()
-        val inflater = LayoutInflater.from(this)
-        for (item in items.take(20)) {
-            val chip = inflater.inflate(R.layout.item_clipboard_chip, strip, false) as TextView
-            chip.text = if (item.isPinned) "📌 ${item.previewLabel}" else item.previewLabel
-            chip.setOnClickListener {
+        clipboardAdapter = ClipboardAdapter(
+            onTap = { item ->
                 currentInputConnection?.commitText(item.text, 1)
-            }
-            chip.setOnLongClickListener {
-                lifecycleScope.launch { clipboardRepository.togglePin(item) }
-                true
-            }
-            strip.addView(chip)
+                lastInsertion = item.text
+                closeClipboardPanel()
+            },
+            onTogglePin = { item -> lifecycleScope.launch { clipboardRepository.togglePin(item) } },
+            onDelete = { item -> lifecycleScope.launch { clipboardRepository.delete(item) } },
+            onReordered = { ordered -> lifecycleScope.launch { clipboardRepository.reorder(ordered) } }
+        )
+        recycler.layoutManager = LinearLayoutManager(this)
+        recycler.adapter = clipboardAdapter
+        clipboardAdapter?.attachDragSupport(recycler)
+
+        panel.findViewById<ImageButton>(R.id.clipboardBackButton)?.setOnClickListener { closeClipboardPanel() }
+        panel.findViewById<TextView>(R.id.clipboardClearButton)?.setOnClickListener {
+            lifecycleScope.launch { clipboardRepository.clearUnpinned() }
         }
+    }
+
+    private fun observeClipboardHistory() {
+        clipboardRepository.history.onEach { items ->
+            clipboardAdapter?.submitList(items)
+            clipboardEmptyText?.isVisible = items.isEmpty()
+        }.launchIn(lifecycleScope)
+    }
+
+    private fun toggleClipboardPanel() {
+        if (isClipboardPanelOpen) closeClipboardPanel() else openClipboardPanel()
+    }
+
+    private fun openClipboardPanel() {
+        isClipboardPanelOpen = true
+        clipboardPanel?.isVisible = true
+        keyboardView?.isVisible = false
+    }
+
+    private fun closeClipboardPanel() {
+        isClipboardPanelOpen = false
+        clipboardPanel?.isVisible = false
+        keyboardView?.isVisible = true
     }
 
     // ---------------------------------------------------------------------------------------
     // InputConnection helper overrides
     // ---------------------------------------------------------------------------------------
-
-    companion object {
-        private const val BASE_KEYBOARD_HEIGHT_DP = 220
-    }
 
     override fun onUpdateSelection(
         oldSelStart: Int, oldSelEnd: Int, newSelStart: Int, newSelEnd: Int,
@@ -535,6 +667,32 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
         if (newSelStart != newSelEnd) {
             // User selected a text range externally; don't keep stale composing state.
             composingWord.clear()
+        }
+    }
+
+    companion object {
+        private const val BASE_KEYBOARD_HEIGHT_DP = 220
+        private const val CURSOR_DRAG_STEP_PX = 22f
+
+        /** A compact, commonly-used emoji grid shown when the emoji toolbar button is tapped. */
+        private val EMOJI_LAYOUT: KeyboardLayout = run {
+            val emojis = listOf(
+                "😀", "😂", "😍", "🥰", "😊", "😉", "😎", "🤔", "😴", "😭",
+                "👍", "👎", "🙏", "👏", "🙌", "💪", "🤝", "❤️", "🔥", "🎉",
+                "✅", "⭐", "☀️", "🌙", "🍕", "☕", "🎂", "⚽", "🚗", "✈️"
+            )
+            val rows = emojis.chunked(10)
+                .map { rowEmojis -> KeyRow(rowEmojis.map { KeyModel(it, KeyType.CHARACTER) }) }
+                .toMutableList()
+            rows.add(
+                KeyRow(
+                    listOf(
+                        KeyModel("ABC", KeyType.LETTERS, widthWeight = 2f),
+                        KeyModel("⌫", KeyType.BACKSPACE, widthWeight = 2f)
+                    )
+                )
+            )
+            KeyboardLayout(rows)
         }
     }
 }

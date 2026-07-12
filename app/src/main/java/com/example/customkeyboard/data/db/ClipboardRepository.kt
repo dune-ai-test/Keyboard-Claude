@@ -17,7 +17,7 @@ class ClipboardRepository(context: Context) {
         if (text.isBlank()) return
         val existing = dao.findByText(text)
         if (existing != null) {
-            dao.update(existing.copy(timestamp = System.currentTimeMillis()))
+            dao.update(existing.copy(timestamp = System.currentTimeMillis(), sortOrder = System.currentTimeMillis()))
         } else {
             dao.insert(ClipboardItem(text = text))
             dao.trimHistory(MAX_UNPINNED_ITEMS)
@@ -33,6 +33,17 @@ class ClipboardRepository(context: Context) {
     suspend fun clearUnpinned() = dao.clearUnpinned()
 
     suspend fun clearAll() = dao.clearAll()
+
+    /**
+     * Persists a new manual order after the user drag-reorders the clipboard list. [orderedItems]
+     * must be in the exact order they should appear (top to bottom); positions are converted to
+     * descending [ClipboardItem.sortOrder] values so the existing DESC query renders them as-is.
+     */
+    suspend fun reorder(orderedItems: List<ClipboardItem>) {
+        val n = orderedItems.size
+        val updated = orderedItems.mapIndexed { index, item -> item.copy(sortOrder = (n - index).toLong()) }
+        dao.updateAll(updated)
+    }
 
     companion object {
         private const val MAX_UNPINNED_ITEMS = 50
