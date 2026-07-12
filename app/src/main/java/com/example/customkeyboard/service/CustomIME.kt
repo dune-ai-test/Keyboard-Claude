@@ -87,6 +87,7 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
     private var suggestion2: TextView? = null
     private var suggestion3: TextView? = null
     private var suggestionBar: View? = null
+    private var toolbarRow: View? = null
 
     // Toolbar
     private var btnSwitchKeyboard: ImageButton? = null
@@ -165,6 +166,7 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
         suggestion2 = view.findViewById(R.id.suggestion2)
         suggestion3 = view.findViewById(R.id.suggestion3)
         suggestionBar = view.findViewById(R.id.suggestionBar)
+        toolbarRow = view.findViewById(R.id.toolbarRow)
 
         btnSwitchKeyboard = view.findViewById(R.id.btnSwitchKeyboard)
         btnSettings = view.findViewById(R.id.btnSettings)
@@ -519,6 +521,14 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
         else -> correction
     }
 
+    /** Toggles the shared top row between the toolbar (default) and suggestion chips. They
+     *  occupy the exact same space, so showing suggestions never adds height or permanently
+     *  hides the toolbar — it simply swaps back once there's nothing to suggest. */
+    private fun setSuggestionBarVisible(visible: Boolean) {
+        suggestionBar?.isVisible = visible
+        toolbarRow?.isVisible = !visible
+    }
+
     private fun updateSuggestions() {
         if (isPasswordField || !currentSettings.predictionEnabled) {
             clearSuggestions()
@@ -538,7 +548,7 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
         }
         // Collapse the whole strip (not just the individual chips) when there's nothing to
         // show, so no empty gap is left between the toolbar and the keyboard rows.
-        suggestionBar?.isVisible = suggestions.isNotEmpty()
+        setSuggestionBarVisible(suggestions.isNotEmpty())
     }
 
     private fun acceptSuggestion(word: String) {
@@ -560,7 +570,7 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
             it?.text = ""
             it?.isVisible = false
         }
-        suggestionBar?.isVisible = false
+        setSuggestionBarVisible(false)
     }
 
     // ---------------------------------------------------------------------------------------
@@ -594,7 +604,7 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
                 }
             }
         }
-        suggestionBar?.isVisible = results.isNotEmpty()
+        setSuggestionBarVisible(results.isNotEmpty())
         if (!capsLockActive) { shiftActive = false; updateShiftVisual() }
     }
 
@@ -615,7 +625,7 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
                 // Show partial transcription live in the first suggestion slot as feedback.
                 suggestion1?.text = partial
                 suggestion1?.isVisible = true
-                suggestionBar?.isVisible = true
+                setSuggestionBarVisible(true)
             },
             onFinalResult = { finalText ->
                 currentInputConnection?.commitText("$finalText ", 1)

@@ -7,112 +7,122 @@
     android:orientation="vertical"
     android:background="@color/kb_background">
 
-    <!-- Top toolbar: switch keyboard, settings, emoji, undo, clipboard, cursor move, voice -->
-    <LinearLayout
-        android:id="@+id/toolbarRow"
+    <!-- Single top row: toolbar icons by default, swapped for suggestion chips while there are
+         predictions to show. They share the same space (never stacked), so no extra "section"
+         ever opens up — the settings/clipboard/etc. row is always available in the same spot. -->
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="@dimen/toolbar_height"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:background="@color/kb_background"
-        android:paddingStart="4dp"
-        android:paddingEnd="4dp">
-
-        <ImageButton
-            android:id="@+id/btnSwitchKeyboard"
-            style="@style/ToolbarIconButton"
-            android:src="@drawable/ic_grid"
-            android:contentDescription="Switch keyboard" />
-
-        <ImageButton
-            android:id="@+id/btnSettings"
-            style="@style/ToolbarIconButton"
-            android:src="@drawable/ic_settings"
-            android:contentDescription="Keyboard settings" />
-
-        <ImageButton
-            android:id="@+id/btnEmoji"
-            style="@style/ToolbarIconButton"
-            android:src="@drawable/ic_emoji"
-            android:contentDescription="Emoji" />
-
-        <ImageButton
-            android:id="@+id/btnUndo"
-            style="@style/ToolbarIconButton"
-            android:src="@drawable/ic_undo"
-            android:contentDescription="Undo" />
-
-        <ImageButton
-            android:id="@+id/btnClipboard"
-            style="@style/ToolbarIconButton"
-            android:src="@drawable/ic_clipboard"
-            android:contentDescription="@string/clipboard_manager" />
-
-        <ImageButton
-            android:id="@+id/btnCursorMove"
-            style="@style/ToolbarIconButton"
-            android:src="@drawable/ic_cursor_move"
-            android:contentDescription="Move cursor" />
-
-        <ImageButton
-            android:id="@+id/btnVoice"
-            style="@style/ToolbarIconButton"
-            android:src="@drawable/ic_mic"
-            android:contentDescription="Voice typing" />
-    </LinearLayout>
-
-    <!-- Suggestion / prediction strip (hidden while the toolbar/clipboard panel is in use) -->
-    <LinearLayout
-        android:id="@+id/suggestionBar"
-        android:layout_width="match_parent"
-        android:layout_height="@dimen/suggestion_bar_height"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
         android:background="@color/kb_background">
 
-        <TextView
-            android:id="@+id/suggestion1"
-            android:layout_width="0dp"
+        <LinearLayout
+            android:id="@+id/toolbarRow"
+            android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:textSize="15sp"
-            android:textColor="@color/kb_key_text"
-            android:background="@drawable/bg_suggestion_ripple"
-            android:singleLine="true"
-            android:ellipsize="end"
-            tools:text="word" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp">
 
-        <View android:layout_width="1dp" android:layout_height="20dp" android:background="@color/kb_divider" />
+            <ImageButton
+                android:id="@+id/btnSwitchKeyboard"
+                style="@style/ToolbarIconButton"
+                android:src="@drawable/ic_grid"
+                android:contentDescription="Switch keyboard" />
 
-        <TextView
-            android:id="@+id/suggestion2"
-            android:layout_width="0dp"
+            <ImageButton
+                android:id="@+id/btnSettings"
+                style="@style/ToolbarIconButton"
+                android:src="@drawable/ic_settings"
+                android:contentDescription="Keyboard settings" />
+
+            <ImageButton
+                android:id="@+id/btnEmoji"
+                style="@style/ToolbarIconButton"
+                android:src="@drawable/ic_emoji"
+                android:contentDescription="Emoji" />
+
+            <ImageButton
+                android:id="@+id/btnUndo"
+                style="@style/ToolbarIconButton"
+                android:src="@drawable/ic_undo"
+                android:contentDescription="Undo" />
+
+            <ImageButton
+                android:id="@+id/btnClipboard"
+                style="@style/ToolbarIconButton"
+                android:src="@drawable/ic_clipboard"
+                android:contentDescription="@string/clipboard_manager" />
+
+            <ImageButton
+                android:id="@+id/btnCursorMove"
+                style="@style/ToolbarIconButton"
+                android:src="@drawable/ic_cursor_move"
+                android:contentDescription="Move cursor" />
+
+            <ImageButton
+                android:id="@+id/btnVoice"
+                style="@style/ToolbarIconButton"
+                android:src="@drawable/ic_mic"
+                android:contentDescription="Voice typing" />
+        </LinearLayout>
+
+        <!-- Suggestion / prediction strip. Occupies the exact same row as the toolbar above —
+             only one of the two is visible at a time, so showing suggestions never adds height
+             or hides the toolbar permanently; it's simply swapped back once typing stops. -->
+        <LinearLayout
+            android:id="@+id/suggestionBar"
+            android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:textSize="15sp"
-            android:textColor="@color/kb_key_text"
-            android:background="@drawable/bg_suggestion_ripple"
-            android:singleLine="true"
-            android:ellipsize="end"
-            tools:text="prediction" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="@color/kb_background"
+            android:visibility="gone">
 
-        <View android:layout_width="1dp" android:layout_height="20dp" android:background="@color/kb_divider" />
+            <TextView
+                android:id="@+id/suggestion1"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:textSize="15sp"
+                android:textColor="@color/kb_key_text"
+                android:background="@drawable/bg_suggestion_ripple"
+                android:singleLine="true"
+                android:ellipsize="end"
+                tools:text="word" />
 
-        <TextView
-            android:id="@+id/suggestion3"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:textSize="15sp"
-            android:textColor="@color/kb_key_text"
-            android:background="@drawable/bg_suggestion_ripple"
-            android:singleLine="true"
-            android:ellipsize="end"
-            tools:text="engine" />
-    </LinearLayout>
+            <View android:layout_width="1dp" android:layout_height="20dp" android:background="@color/kb_divider" />
+
+            <TextView
+                android:id="@+id/suggestion2"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:textSize="15sp"
+                android:textColor="@color/kb_key_text"
+                android:background="@drawable/bg_suggestion_ripple"
+                android:singleLine="true"
+                android:ellipsize="end"
+                tools:text="prediction" />
+
+            <View android:layout_width="1dp" android:layout_height="20dp" android:background="@color/kb_divider" />
+
+            <TextView
+                android:id="@+id/suggestion3"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:textSize="15sp"
+                android:textColor="@color/kb_key_text"
+                android:background="@drawable/bg_suggestion_ripple"
+                android:singleLine="true"
+                android:ellipsize="end"
+                tools:text="engine" />
+        </LinearLayout>
+    </FrameLayout>
 
     <View
         android:layout_width="match_parent"

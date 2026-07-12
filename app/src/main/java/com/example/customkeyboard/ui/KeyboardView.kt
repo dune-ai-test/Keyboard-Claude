@@ -89,6 +89,10 @@ class KeyboardView @JvmOverloads constructor(
     private var showingPopupFor: KeyBoundsEntry? = null
     private var popupSelectedIndex = -1
 
+    // Backspace long-press auto-repeat.
+    private var backspaceRepeatRunnable: Runnable? = null
+    private var isBackspaceRepeating = false
+
     // --- Gesture typing state ---
     private var isGesturing = false
     private var gesturePoints = mutableListOf<KeyPoint>()
@@ -128,16 +132,20 @@ class KeyboardView @JvmOverloads constructor(
 
         val rows = layout.rows
         val rowHeight = height.toFloat() / rows.size
-        val padding = resources.getDimension(R.dimen.keyboard_padding)
+        // Separate, tighter margins for the gap between keys (horizontal) vs. the gap between
+        // rows (vertical) — using one larger shared value for both wasted a lot of space and
+        // made the actual tappable key rectangles noticeably smaller than they need to be.
+        val hMargin = resources.getDimension(R.dimen.key_horizontal_margin)
+        val vMargin = resources.getDimension(R.dimen.key_vertical_margin)
 
         for ((rowIndex, row) in rows.withIndex()) {
             val totalWeight = row.keys.sumOf { it.widthWeight.toDouble() }.toFloat()
             var xCursor = 0f
-            val top = rowIndex * rowHeight + padding
-            val bottom = (rowIndex + 1) * rowHeight - padding
+            val top = rowIndex * rowHeight + vMargin
+            val bottom = (rowIndex + 1) * rowHeight - vMargin
             for (key in row.keys) {
                 val keyWidth = (width.toFloat() / totalWeight) * key.widthWeight
-                val rect = RectF(xCursor + padding, top, xCursor + keyWidth - padding, bottom)
+                val rect = RectF(xCursor + hMargin, top, xCursor + keyWidth - hMargin, bottom)
                 keyBounds.add(KeyBoundsEntry(key, rect))
                 xCursor += keyWidth
             }
@@ -291,6 +299,19 @@ class KeyboardView @JvmOverloads constructor(
             longPressRunnable = runnable
             postDelayed(runnable, LONG_PRESS_TIMEOUT_MS)
         }
+
+        if (entry.key.type == KeyType.BACKSPACE) {
+            val repeat = object : Runnable {
+                override fun run() {
+                    isBackspaceRepeating = true
+                    listener?.onKeyTap(entry.key)
+                    listener?.onKeyDownFeedback()
+                    postDelayed(this, BACKSPACE_REPEAT_INTERVAL_MS)
+                }
+            }
+            backspaceRepeatRunnable = repeat
+            postDelayed(repeat, BACKSPACE_INITIAL_REPEAT_DELAY_MS)
+        }
         invalidate()
     }
 
@@ -337,6 +358,8 @@ class KeyboardView @JvmOverloads constructor(
 
     private fun handleUp(event: MotionEvent) {
         longPressRunnable?.let { removeCallbacks(it) }
+        backspaceRepeatRunnable?.let { removeCallbacks(it) }
+        backspaceRepeatRunnable = null
 
         if (showingPopupFor != null) {
             val entry = showingPopupFor!!
@@ -353,7 +376,9 @@ class KeyboardView @JvmOverloads constructor(
             return
         }
 
-        if (!longPressTriggered) {
+        // If backspace already auto-repeated while held, the release itself shouldn't also
+        // fire a normal tap (that would delete one extra character).
+        if (!longPressTriggered && !isBackspaceRepeating) {
             val entry = keyAt(event.x, event.y) ?: keyAt(downX, downY)
             entry?.let { listener?.onKeyTap(it.key) }
         }
@@ -382,6 +407,9 @@ class KeyboardView @JvmOverloads constructor(
         isGesturing = false
         gesturePoints = mutableListOf()
         gestureStartKey = null
+        backspaceRepeatRunnable?.let { removeCallbacks(it) }
+        backspaceRepeatRunnable = null
+        isBackspaceRepeating = false
         invalidate()
     }
 
@@ -392,5 +420,7 @@ class KeyboardView @JvmOverloads constructor(
         private const val LONG_PRESS_TIMEOUT_MS = 350L
         private const val TOUCH_SLOP = 16f
         private const val GESTURE_START_THRESHOLD = 40f
+        private const val BACKSPACE_INITIAL_REPEAT_DELAY_MS = 400L
+        private const val BACKSPACE_REPEAT_INTERVAL_MS = 60L
     }
 }
