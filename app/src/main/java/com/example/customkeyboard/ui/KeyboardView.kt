@@ -218,13 +218,23 @@ class KeyboardView @JvmOverloads constructor(
         }
     }
 
+    /** Computes the popup's left edge, clamped so the whole popup (including the first option —
+     *  always the key's own base character) stays fully on-screen. Without this, keys near the
+     *  left/right edge (Q, A, Z / P, L, M) would render their popup partly off-canvas, silently
+     *  clipping away whichever option landed outside the view's bounds. */
+    private fun clampedPopupLeft(entry: KeyBoundsEntry, totalWidth: Float): Float {
+        val ideal = entry.rect.centerX() - totalWidth / 2f
+        val maxLeft = (width - totalWidth).coerceAtLeast(0f)
+        return ideal.coerceIn(0f, maxLeft)
+    }
+
     private fun drawPopup(canvas: Canvas, entry: KeyBoundsEntry) {
         val options = listOf(entry.key.label) + entry.key.longPressLabels
         if (options.size <= 1) return
         val optionWidth = entry.rect.width() * 1.2f
         val popupHeight = entry.rect.height() * 1.4f
         val totalWidth = optionWidth * options.size
-        var left = entry.rect.centerX() - totalWidth / 2f
+        var left = clampedPopupLeft(entry, totalWidth)
         val top = entry.rect.top - popupHeight - 12f
         popupTextPaint.textSize = resources.getDimension(R.dimen.key_text_size)
 
@@ -355,7 +365,7 @@ class KeyboardView @JvmOverloads constructor(
         val options = listOf(entry.key.label) + entry.key.longPressLabels
         val optionWidth = entry.rect.width() * 1.2f
         val totalWidth = optionWidth * options.size
-        val left = entry.rect.centerX() - totalWidth / 2f
+        val left = clampedPopupLeft(entry, totalWidth)
         val relativeX = x - left
         val index = (relativeX / optionWidth).toInt().coerceIn(0, options.size - 1)
         if (index != popupSelectedIndex) {

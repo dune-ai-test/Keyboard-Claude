@@ -43,6 +43,9 @@ object KeyboardLayouts {
     }
 
     fun letters(): KeyboardLayout {
+        val numberRow = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0").map {
+            KeyModel(it, KeyType.CHARACTER)
+        }
         val row1 = listOf("q", "w", "e", "r", "t", "y", "u", "i", "o", "p").map { charKey(it) }
         val row2 = listOf("a", "s", "d", "f", "g", "h", "j", "k", "l").map { charKey(it) }
         val row3 = mutableListOf<KeyModel>()
@@ -58,7 +61,7 @@ object KeyboardLayouts {
             KeyModel(".", KeyType.PERIOD, widthWeight = 1f, longPressLabels = listOf("!", "?")),
             KeyModel("⏎", KeyType.ENTER, widthWeight = 1.5f, isPrimary = true)
         )
-        return KeyboardLayout(listOf(KeyRow(row1), KeyRow(row2), KeyRow(row3), KeyRow(row4)))
+        return KeyboardLayout(listOf(KeyRow(numberRow), KeyRow(row1), KeyRow(row2), KeyRow(row3), KeyRow(row4)))
     }
 
     /**

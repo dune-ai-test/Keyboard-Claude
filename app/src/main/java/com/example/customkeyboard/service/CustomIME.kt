@@ -86,6 +86,7 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
     private var suggestion1: TextView? = null
     private var suggestion2: TextView? = null
     private var suggestion3: TextView? = null
+    private var suggestionBar: View? = null
 
     // Toolbar
     private var btnSwitchKeyboard: ImageButton? = null
@@ -163,6 +164,7 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
         suggestion1 = view.findViewById(R.id.suggestion1)
         suggestion2 = view.findViewById(R.id.suggestion2)
         suggestion3 = view.findViewById(R.id.suggestion3)
+        suggestionBar = view.findViewById(R.id.suggestionBar)
 
         btnSwitchKeyboard = view.findViewById(R.id.btnSwitchKeyboard)
         btnSettings = view.findViewById(R.id.btnSettings)
@@ -298,7 +300,10 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
 
     private fun handleKeyTap(key: KeyModel) {
         when (key.type) {
-            KeyType.CHARACTER -> handleCommitText(applyShiftCase(key.label), true)
+            KeyType.CHARACTER -> {
+                if (currentPage == Page.EMOJI) handleEmojiCommit(key.label)
+                else handleCommitText(applyShiftCase(key.label), true)
+            }
             KeyType.COMMA -> handleCommitText(",", false)
             KeyType.PERIOD -> handleCommitText(".", false)
             KeyType.SPACE -> handleSpace()
@@ -312,6 +317,16 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
             KeyType.EMOJI -> toggleEmojiPage()
             KeyType.VOICE -> toggleVoiceTyping()
         }
+    }
+
+    /** Commits a plain-text emoji, fully bypassing word-composition, auto-correct, and the
+     *  dictionary — emoji are never part of a "word" and should never be case-shifted or
+     *  fed through the composing-word buffer. */
+    private fun handleEmojiCommit(emojiText: String) {
+        val ic = currentInputConnection ?: return
+        finalizeComposingWord(commitAutoCorrect = false)
+        ic.commitText(emojiText, 1)
+        lastInsertion = emojiText
     }
 
     /** Commits a single character while keeping track of the in-progress word for prediction. */
@@ -359,7 +374,13 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
         if (composingWord.isNotEmpty()) {
             composingWord.deleteCharAt(composingWord.length - 1)
         }
-        ic.deleteSurroundingText(1, 0)
+        // Delete a full character, not just one UTF-16 unit — otherwise deleting an emoji
+        // (which is a surrogate pair) leaves a dangling, unrenderable half-character behind.
+        val beforeCursor = ic.getTextBeforeCursor(2, 0)
+        val deleteLength = if (beforeCursor != null && beforeCursor.length == 2 &&
+            Character.isSurrogatePair(beforeCursor[0], beforeCursor[1])
+        ) 2 else 1
+        ic.deleteSurroundingText(deleteLength, 0)
         lastInsertion = ""
         updateSuggestions()
     }
@@ -515,6 +536,9 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
             views[i]?.setOnClickListener { s?.let { acceptSuggestion(it) } }
             views[i]?.isVisible = s != null
         }
+        // Collapse the whole strip (not just the individual chips) when there's nothing to
+        // show, so no empty gap is left between the toolbar and the keyboard rows.
+        suggestionBar?.isVisible = suggestions.isNotEmpty()
     }
 
     private fun acceptSuggestion(word: String) {
@@ -536,6 +560,7 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
             it?.text = ""
             it?.isVisible = false
         }
+        suggestionBar?.isVisible = false
     }
 
     // ---------------------------------------------------------------------------------------
@@ -569,6 +594,7 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
                 }
             }
         }
+        suggestionBar?.isVisible = results.isNotEmpty()
         if (!capsLockActive) { shiftActive = false; updateShiftVisual() }
     }
 
@@ -589,6 +615,7 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
                 // Show partial transcription live in the first suggestion slot as feedback.
                 suggestion1?.text = partial
                 suggestion1?.isVisible = true
+                suggestionBar?.isVisible = true
             },
             onFinalResult = { finalText ->
                 currentInputConnection?.commitText("$finalText ", 1)
@@ -674,13 +701,20 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
         private const val BASE_KEYBOARD_HEIGHT_DP = 220
         private const val CURSOR_DRAG_STEP_PX = 22f
 
-        /** A compact, commonly-used emoji grid shown when the emoji toolbar button is tapped. */
+        /** Builds an emoji string from its raw Unicode code point — avoids embedding literal
+         *  multi-byte / variation-selector sequences in source, which some text fields reject. */
+        private fun emoji(codePoint: Int): String = String(Character.toChars(codePoint))
+
+        /** A compact, commonly-used emoji grid shown when the emoji toolbar button is tapped.
+         *  Deliberately uses plain base code points (no ZWJ / variation-selector combinations)
+         *  so every target field accepts them as ordinary text. */
         private val EMOJI_LAYOUT: KeyboardLayout = run {
-            val emojis = listOf(
-                "😀", "😂", "😍", "🥰", "😊", "😉", "😎", "🤔", "😴", "😭",
-                "👍", "👎", "🙏", "👏", "🙌", "💪", "🤝", "❤️", "🔥", "🎉",
-                "✅", "⭐", "☀️", "🌙", "🍕", "☕", "🎂", "⚽", "🚗", "✈️"
+            val codePoints = listOf(
+                0x1F600, 0x1F602, 0x1F60D, 0x1F970, 0x1F60A, 0x1F609, 0x1F60E, 0x1F914, 0x1F634, 0x1F62D,
+                0x1F44D, 0x1F44E, 0x1F64F, 0x1F44F, 0x1F64C, 0x1F4AA, 0x1F91D, 0x2764, 0x1F525, 0x1F389,
+                0x2705, 0x2B50, 0x2600, 0x1F319, 0x1F355, 0x2615, 0x1F382, 0x26BD, 0x1F697, 0x2708
             )
+            val emojis = codePoints.map { emoji(it) }
             val rows = emojis.chunked(10)
                 .map { rowEmojis -> KeyRow(rowEmojis.map { KeyModel(it, KeyType.CHARACTER) }) }
                 .toMutableList()
