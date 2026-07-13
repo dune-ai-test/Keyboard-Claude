@@ -4,7 +4,10 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.inputmethodservice.InputMethodService
+import android.net.Uri
 import android.text.InputType
 import android.view.KeyEvent
 import android.view.LayoutInflater
@@ -27,12 +30,14 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import com.example.customkeyboard.R
 import com.example.customkeyboard.data.Dictionary
+import com.example.customkeyboard.data.IMAGE_THEME_ID
 import com.example.customkeyboard.data.KeyModel
 import com.example.customkeyboard.data.KeyRow
 import com.example.customkeyboard.data.KeyType
 import com.example.customkeyboard.data.KeyboardLayout
 import com.example.customkeyboard.data.KeyboardLayouts
 import com.example.customkeyboard.data.KeyboardSettings
+import com.example.customkeyboard.data.KeyboardThemePresets
 import com.example.customkeyboard.data.SettingsRepository
 import com.example.customkeyboard.data.db.ClipboardItem
 import com.example.customkeyboard.data.db.ClipboardRepository
@@ -45,9 +50,11 @@ import com.example.customkeyboard.util.HapticUtil
 import com.example.customkeyboard.util.SoundUtil
 import com.example.customkeyboard.voice.VoiceInputHelper
 import kotlin.math.abs
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * The heart of the keyboard app: an [InputMethodService] that renders the custom [KeyboardView],
@@ -118,6 +125,11 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
     private var isPasswordField = false
     private var isVoiceListening = false
 
+    // Tracks which theme/image was last applied so unrelated settings changes (e.g. toggling
+    // vibration) don't trigger a wasteful image re-decode on every emission.
+    private var lastAppliedThemeId: String? = null
+    private var lastAppliedImageUri: String? = null
+
     // One-level undo: remembers the most recent text this IME inserted so it can be reverted.
     private var lastInsertion: String = ""
 
@@ -141,6 +153,11 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
             currentSettings = settings
             keyboardView?.swipeTypingEnabled = settings.swipeTypingEnabled
             applyKeyboardHeight(settings.keyboardHeightPercent)
+            if (settings.keyboardThemeId != lastAppliedThemeId || settings.keyboardImageUri != lastAppliedImageUri) {
+                lastAppliedThemeId = settings.keyboardThemeId
+                lastAppliedImageUri = settings.keyboardImageUri
+                applyKeyboardTheme(settings)
+            }
         }.launchIn(lifecycleScope)
 
         // Monitor system clipboard changes and persist them (with a max history size, purely local).
@@ -180,8 +197,8 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
         clipboardRecyclerView = view.findViewById(R.id.clipboardRecyclerView)
         clipboardEmptyText = view.findViewById(R.id.clipboardEmptyText)
 
-        keyboardView?.applyThemeColors()
         keyboardView?.swipeTypingEnabled = currentSettings.swipeTypingEnabled
+        applyKeyboardTheme(currentSettings)
         keyboardView?.listener = object : KeyboardView.Listener {
             override fun onKeyTap(key: KeyModel) = handleKeyTap(key)
             override fun onKeyLongPressChar(char: String) = handleCommitText(applyShiftCase(char), true)
@@ -249,6 +266,53 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
         if (params != null) {
             params.height = targetHeight
             content.layoutParams = params
+        }
+    }
+
+    /** Applies whichever keyboard theme is currently selected: one of the 6 flat-color presets,
+     *  or a user-picked background picture (decoded off the main thread, downsampled to roughly
+     *  the keyboard's own pixel size so a multi-megapixel photo never balloons memory use). */
+    private fun applyKeyboardTheme(settings: KeyboardSettings) {
+        if (settings.keyboardThemeId == IMAGE_THEME_ID && settings.keyboardImageUri != null) {
+            keyboardView?.applyCustomColors(KeyboardThemePresets.IMAGE_OVERLAY)
+            val uriString = settings.keyboardImageUri
+            lifecycleScope.launch {
+                val bitmap = loadDownsampledBitmap(uriString)
+                keyboardView?.setBackgroundImage(bitmap)
+            }
+        } else {
+            keyboardView?.setBackgroundImage(null)
+            keyboardView?.applyCustomColors(KeyboardThemePresets.byId(settings.keyboardThemeId))
+        }
+    }
+
+    /** Decodes [uriString] on a background thread at roughly the keyboard's own resolution
+     *  (via [BitmapFactory.Options.inSampleSize]) instead of loading the full-resolution photo,
+     *  which keeps memory and decode time low regardless of how large the source picture is. */
+    private suspend fun loadDownsampledBitmap(uriString: String): Bitmap? = withContext(Dispatchers.IO) {
+        try {
+            val uri = Uri.parse(uriString)
+            val targetWidth = resources.displayMetrics.widthPixels
+            val targetHeight = (resources.displayMetrics.density * BASE_KEYBOARD_HEIGHT_DP).toInt()
+
+            val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            contentResolver.openInputStream(uri)?.use {
+                BitmapFactory.decodeStream(it, null, boundsOptions)
+            } ?: return@withContext null
+
+            var sampleSize = 1
+            while (boundsOptions.outWidth / (sampleSize * 2) >= targetWidth &&
+                boundsOptions.outHeight / (sampleSize * 2) >= targetHeight
+            ) {
+                sampleSize *= 2
+            }
+
+            val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+            contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, decodeOptions) }
+        } catch (t: Throwable) {
+            // A revoked permission, deleted file, or corrupt image shouldn't crash the keyboard —
+            // just fall back to no background image.
+            null
         }
     }
 

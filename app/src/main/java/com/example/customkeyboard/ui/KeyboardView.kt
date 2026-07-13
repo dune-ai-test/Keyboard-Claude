@@ -2,6 +2,7 @@ package com.example.customkeyboard.ui
 
 import android.animation.ValueAnimator
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
@@ -12,11 +13,12 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.animation.DecelerateInterpolator
 import android.view.animation.OvershootInterpolator
-import androidx.core.content.ContextCompat
 import com.example.customkeyboard.R
 import com.example.customkeyboard.data.KeyModel
 import com.example.customkeyboard.data.KeyType
 import com.example.customkeyboard.data.KeyboardLayout
+import com.example.customkeyboard.data.KeyboardThemeColors
+import com.example.customkeyboard.data.KeyboardThemePresets
 import com.example.customkeyboard.gesture.KeyPoint
 import kotlin.math.abs
 import kotlin.math.hypot
@@ -85,6 +87,17 @@ class KeyboardView @JvmOverloads constructor(
     private val textBounds = Rect()
     private val keyBounds = mutableListOf<KeyBoundsEntry>()
 
+    /** The active color palette; defaults to the built-in dark preset until [applyCustomColors]
+     *  is called with whatever the user picked in Settings. */
+    private var currentTheme: KeyboardThemeColors = KeyboardThemePresets.MIDNIGHT_TEAL
+
+    /** Optional custom background picture (set via [setBackgroundImage]), drawn center-cropped
+     *  behind the (translucent, when an image is active) keys. */
+    private var backgroundBitmap: Bitmap? = null
+    private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val bitmapSrcRect = Rect()
+    private val bitmapDstRect = RectF()
+
     private data class KeyBoundsEntry(val key: KeyModel, val rect: RectF)
 
     private var pressedKey: KeyModel? = null
@@ -131,23 +144,59 @@ class KeyboardView @JvmOverloads constructor(
     private var downY = 0f
 
     init {
-        applyThemeColors()
+        applyCustomColors(currentTheme)
     }
 
-    fun applyThemeColors() {
-        keyBgPaint.color = ContextCompat.getColor(context, R.color.kb_key_background)
-        keyBgPressedPaint.color = ContextCompat.getColor(context, R.color.kb_key_background_pressed)
-        keySpecialBgPaint.color = ContextCompat.getColor(context, R.color.kb_key_special_background)
-        keyPrimaryBgPaint.color = ContextCompat.getColor(context, R.color.kb_accent)
-        keyPrimaryBgPressedPaint.color = ContextCompat.getColor(context, R.color.kb_accent)
-        keyTextPaint.color = ContextCompat.getColor(context, R.color.kb_key_text)
-        hintTextPaint.color = ContextCompat.getColor(context, R.color.kb_key_hint)
-        popupBgPaint.color = ContextCompat.getColor(context, R.color.kb_popup_background)
-        popupTextPaint.color = ContextCompat.getColor(context, R.color.kb_key_text)
-        gesturePathPaint.color = ContextCompat.getColor(context, R.color.kb_accent)
-        ripplePaint.color = ContextCompat.getColor(context, R.color.kb_key_text)
-        setBackgroundColor(ContextCompat.getColor(context, R.color.kb_background))
+    /** Applies a full color palette at runtime — no APK resources involved, so switching themes
+     *  (including the 6 built-in presets and the custom-image overlay palette) never requires
+     *  recreating the view. */
+    fun applyCustomColors(theme: KeyboardThemeColors) {
+        currentTheme = theme
+        keyBgPaint.color = theme.keyBackground
+        keyBgPressedPaint.color = theme.keyPressedBackground
+        keySpecialBgPaint.color = theme.specialKeyBackground
+        keyPrimaryBgPaint.color = theme.accent
+        keyPrimaryBgPressedPaint.color = theme.accent
+        keyTextPaint.color = theme.keyText
+        hintTextPaint.color = theme.keyHint
+        popupBgPaint.color = theme.popupBackground
+        popupTextPaint.color = theme.keyText
+        gesturePathPaint.color = theme.accent
+        ripplePaint.color = theme.keyText
+        setBackgroundColor(theme.background)
         invalidate()
+    }
+
+    /** Sets (or clears, when [bitmap] is null) the custom background picture. The bitmap is
+     *  expected to already be appropriately downsampled by the caller — this view only scales
+     *  and center-crops it to fit, it never decodes or resizes the source image itself. */
+    fun setBackgroundImage(bitmap: Bitmap?) {
+        backgroundBitmap = bitmap
+        invalidate()
+    }
+
+    /** Center-crops [backgroundBitmap] to fill the view exactly, matching how a phone wallpaper
+     *  or a photo app's "fill" mode behaves, so odd-aspect-ratio pictures never look stretched. */
+    private fun drawBackgroundImageIfNeeded(canvas: Canvas) {
+        val bitmap = backgroundBitmap ?: return
+        if (width == 0 || height == 0) return
+
+        val viewAspect = width.toFloat() / height.toFloat()
+        val bitmapAspect = bitmap.width.toFloat() / bitmap.height.toFloat()
+
+        if (bitmapAspect > viewAspect) {
+            // Bitmap is relatively wider than the view: crop its left/right edges.
+            val cropWidth = (bitmap.height * viewAspect).toInt().coerceAtMost(bitmap.width)
+            val left = (bitmap.width - cropWidth) / 2
+            bitmapSrcRect.set(left, 0, left + cropWidth, bitmap.height)
+        } else {
+            // Bitmap is relatively taller than the view: crop its top/bottom edges.
+            val cropHeight = (bitmap.width / viewAspect).toInt().coerceAtMost(bitmap.height)
+            val top = (bitmap.height - cropHeight) / 2
+            bitmapSrcRect.set(0, top, bitmap.width, top + cropHeight)
+        }
+        bitmapDstRect.set(0f, 0f, width.toFloat(), height.toFloat())
+        canvas.drawBitmap(bitmap, bitmapSrcRect, bitmapDstRect, bitmapPaint)
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -317,6 +366,7 @@ class KeyboardView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+        drawBackgroundImageIfNeeded(canvas)
         val cornerRadius = resources.getDimension(R.dimen.key_corner_radius)
         keyTextPaint.textSize = resources.getDimension(R.dimen.key_text_size)
         hintTextPaint.textSize = resources.getDimension(R.dimen.key_subtext_size)
@@ -359,10 +409,9 @@ class KeyboardView @JvmOverloads constructor(
 
             val displayLabel = displayLabelFor(entry.key)
             keyTextPaint.color = when {
-                entry.key.isPrimary -> ContextCompat.getColor(context, R.color.kb_background)
-                entry.key.type == KeyType.SHIFT && (capsLockActive || shiftActive) ->
-                    ContextCompat.getColor(context, R.color.kb_accent)
-                else -> ContextCompat.getColor(context, R.color.kb_key_text)
+                entry.key.isPrimary -> currentTheme.background
+                entry.key.type == KeyType.SHIFT && (capsLockActive || shiftActive) -> currentTheme.accent
+                else -> currentTheme.keyText
             }
 
             keyTextPaint.getTextBounds(displayLabel, 0, displayLabel.length, textBounds)
@@ -436,7 +485,7 @@ class KeyboardView @JvmOverloads constructor(
         val label = displayLabelFor(entry.key)
         val previousTextSize = popupTextPaint.textSize
         popupTextPaint.textSize = resources.getDimension(R.dimen.key_text_size) * 1.3f
-        popupTextPaint.color = ContextCompat.getColor(context, R.color.kb_key_text)
+        popupTextPaint.color = currentTheme.keyText
         popupTextPaint.alpha = alpha255
         canvas.drawText(
             label,
@@ -466,7 +515,7 @@ class KeyboardView @JvmOverloads constructor(
             if (i == popupSelectedIndex) {
                 canvas.drawRoundRect(optRect, 10f, 10f, keyBgPressedPaint)
             }
-            popupTextPaint.color = ContextCompat.getColor(context, R.color.kb_key_text)
+            popupTextPaint.color = currentTheme.keyText
             canvas.drawText(
                 opt,
                 optRect.centerX(),

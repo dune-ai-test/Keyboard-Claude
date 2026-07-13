@@ -34,4 +34,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun setPopupEnabled(enabled: Boolean) = viewModelScope.launch { repository.setPopupEnabled(enabled) }
     fun setAutoCapitalize(enabled: Boolean) = viewModelScope.launch { repository.setAutoCapitalize(enabled) }
     fun setDoubleSpacePeriod(enabled: Boolean) = viewModelScope.launch { repository.setDoubleSpacePeriod(enabled) }
+    fun setKeyboardTheme(themeId: String) = viewModelScope.launch { repository.setKeyboardTheme(themeId) }
+    fun setKeyboardImage(uri: String) = viewModelScope.launch { repository.setKeyboardImage(uri) }
 }

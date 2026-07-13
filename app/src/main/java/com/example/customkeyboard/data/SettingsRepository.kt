@@ -26,7 +26,11 @@ data class KeyboardSettings(
     val voiceTypingEnabled: Boolean = true,
     val popupOnKeyPress: Boolean = true,
     val autoCapitalize: Boolean = true,
-    val doubleSpacePeriod: Boolean = true
+    val doubleSpacePeriod: Boolean = true,
+    /** One of [KeyboardThemePresets.ALL]'s ids, or [IMAGE_THEME_ID] when a custom picture is active. */
+    val keyboardThemeId: String = KeyboardThemePresets.MIDNIGHT_TEAL.id,
+    /** content:// URI of the user-picked keyboard background image, when [keyboardThemeId] == [IMAGE_THEME_ID]. */
+    val keyboardImageUri: String? = null
 ) {
     companion object {
         const val THEME_LIGHT = "light"
@@ -56,6 +60,8 @@ class SettingsRepository(private val context: Context) {
         val POPUP_ENABLED = booleanPreferencesKey("popup_enabled")
         val AUTO_CAPS = booleanPreferencesKey("auto_caps")
         val DOUBLE_SPACE_PERIOD = booleanPreferencesKey("double_space_period")
+        val KEYBOARD_THEME_ID = stringPreferencesKey("keyboard_theme_id")
+        val KEYBOARD_IMAGE_URI = stringPreferencesKey("keyboard_image_uri")
     }
 
     val settingsFlow: Flow<KeyboardSettings> = context.dataStore.data.map { prefs ->
@@ -72,7 +78,9 @@ class SettingsRepository(private val context: Context) {
             voiceTypingEnabled = prefs[Keys.VOICE_ENABLED] ?: true,
             popupOnKeyPress = prefs[Keys.POPUP_ENABLED] ?: true,
             autoCapitalize = prefs[Keys.AUTO_CAPS] ?: true,
-            doubleSpacePeriod = prefs[Keys.DOUBLE_SPACE_PERIOD] ?: true
+            doubleSpacePeriod = prefs[Keys.DOUBLE_SPACE_PERIOD] ?: true,
+            keyboardThemeId = prefs[Keys.KEYBOARD_THEME_ID] ?: KeyboardThemePresets.MIDNIGHT_TEAL.id,
+            keyboardImageUri = prefs[Keys.KEYBOARD_IMAGE_URI]
         )
     }
 
@@ -89,6 +97,18 @@ class SettingsRepository(private val context: Context) {
     suspend fun setPopupEnabled(enabled: Boolean) = context.dataStore.edit { it[Keys.POPUP_ENABLED] = enabled }
     suspend fun setAutoCapitalize(enabled: Boolean) = context.dataStore.edit { it[Keys.AUTO_CAPS] = enabled }
     suspend fun setDoubleSpacePeriod(enabled: Boolean) = context.dataStore.edit { it[Keys.DOUBLE_SPACE_PERIOD] = enabled }
+
+    /** Selects one of the 6 built-in color presets and clears any custom background image. */
+    suspend fun setKeyboardTheme(themeId: String) = context.dataStore.edit {
+        it[Keys.KEYBOARD_THEME_ID] = themeId
+        it.remove(Keys.KEYBOARD_IMAGE_URI)
+    }
+
+    /** Selects a custom picture as the keyboard background (switches theme to [IMAGE_THEME_ID]). */
+    suspend fun setKeyboardImage(uri: String) = context.dataStore.edit {
+        it[Keys.KEYBOARD_THEME_ID] = IMAGE_THEME_ID
+        it[Keys.KEYBOARD_IMAGE_URI] = uri
+    }
 
     companion object {
         @Volatile private var instance: SettingsRepository? = null
