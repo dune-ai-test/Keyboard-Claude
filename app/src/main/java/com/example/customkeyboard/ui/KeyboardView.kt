@@ -97,6 +97,8 @@ class KeyboardView @JvmOverloads constructor(
     private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val bitmapSrcRect = Rect()
     private val bitmapDstRect = RectF()
+    private val scrimPaint = Paint()
+    private val keyShadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x5C000000 }
 
     private data class KeyBoundsEntry(val key: KeyModel, val rect: RectF)
 
@@ -197,6 +199,12 @@ class KeyboardView @JvmOverloads constructor(
         }
         bitmapDstRect.set(0f, 0f, width.toFloat(), height.toFloat())
         canvas.drawBitmap(bitmap, bitmapSrcRect, bitmapDstRect, bitmapPaint)
+
+        // A flat, even scrim over the whole picture guarantees a baseline of contrast no matter
+        // how bright or busy the photo is — without it, keys and text could disappear into
+        // light or high-detail areas of the image.
+        scrimPaint.color = SCRIM_COLOR
+        canvas.drawRect(bitmapDstRect, scrimPaint)
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -371,6 +379,15 @@ class KeyboardView @JvmOverloads constructor(
         keyTextPaint.textSize = resources.getDimension(R.dimen.key_text_size)
         hintTextPaint.textSize = resources.getDimension(R.dimen.key_subtext_size)
 
+        val hasImageBackground = backgroundBitmap != null
+        // A soft text shadow keeps key labels readable no matter what's directly behind them in
+        // the photo (light sky, dark shadow, busy detail — all still legible with this).
+        if (hasImageBackground) {
+            keyTextPaint.setShadowLayer(3f, 0f, 1f, 0xB3000000.toInt())
+        } else {
+            keyTextPaint.clearShadowLayer()
+        }
+
         for (entry in keyBounds) {
             val isSpecial = entry.key.type != KeyType.CHARACTER
             val basePaint = if (entry.key.isPrimary) keyPrimaryBgPaint else if (isSpecial) keySpecialBgPaint else keyBgPaint
@@ -385,6 +402,13 @@ class KeyboardView @JvmOverloads constructor(
                 RectF(entry.rect).apply { inset(inset, inset) }
             } else {
                 entry.rect
+            }
+
+            if (hasImageBackground) {
+                // A simple flat offset shadow (no blur — cheap, and renders identically on
+                // every API level) so each key visibly separates from the photo behind it.
+                val shadowRect = RectF(drawRect).apply { offset(0f, 2f) }
+                canvas.drawRoundRect(shadowRect, cornerRadius, cornerRadius, keyShadowPaint)
             }
             canvas.drawRoundRect(drawRect, cornerRadius, cornerRadius, basePaint)
 
@@ -687,6 +711,7 @@ class KeyboardView @JvmOverloads constructor(
         private const val LONG_PRESS_TIMEOUT_MS = 350L
         private const val TOUCH_SLOP = 16f
         private const val GESTURE_START_THRESHOLD = 40f
+        private const val SCRIM_COLOR = 0x5C000000 // ~36% black, evens out photo brightness
         private const val BACKSPACE_INITIAL_REPEAT_DELAY_MS = 400L
         private const val BACKSPACE_REPEAT_INTERVAL_MS = 60L
         private const val PRESS_FADE_IN_MS = 55L

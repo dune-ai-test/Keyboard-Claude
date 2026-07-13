@@ -1,4 +1,4 @@
-# Custom Keyboard — Modern Android IME
+# Aura Keyboard — Modern Android IME
 
 A production-oriented custom Android keyboard (Input Method Editor) built with Kotlin,
 MVVM, Jetpack Compose (settings & clipboard UI), Room, and DataStore.
@@ -69,7 +69,7 @@ the app UI apply to the live keyboard immediately, and vice versa.
    AGP 8.5, Kotlin 1.9.24, Compose BOM 2024.06, Room 2.6.1, KSP).
 3. Run the `app` module on a device/emulator (**API 24+**).
 4. On first launch, tap **Enable** to open Android's *Manage keyboards* settings and turn on
-   "Custom Keyboard", then tap **Switch Keyboard** (or the globe key on any keyboard) to select it.
+   "Aura Keyboard", then tap **Switch Keyboard** (or the globe key on any keyboard) to select it.
 
 > This repo ships without a `gradle-wrapper.jar` binary (sandboxed build environment has no
 > access to Gradle's distribution servers). Android Studio will generate/download it

@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Custom Keyboard</string>
+    <string name="app_name">Aura Keyboard</string>
     <string name="clipboard_manager">Clipboard Manager</string>
     <string name="ime_subtype_english">English (US)</string>
     <string name="settings_title">Keyboard Settings</string>

@@ -112,6 +112,11 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
     private var clipboardAdapter: ClipboardAdapter? = null
     private var isClipboardPanelOpen = false
 
+    // In-panel confirmation dialog for destructive clipboard actions (delete / clear).
+    private var confirmOverlay: View? = null
+    private var confirmTitle: TextView? = null
+    private var confirmMessage: TextView? = null
+
     // --- Keyboard state ---
     private enum class Page { LETTERS, NUMBERS, SYMBOLS, EMOJI }
     private var currentPage = Page.LETTERS
@@ -720,6 +725,12 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
         val panel = clipboardPanel ?: return
         val recycler = clipboardRecyclerView ?: return
 
+        confirmOverlay = panel.findViewById(R.id.confirmOverlay)
+        confirmTitle = panel.findViewById(R.id.confirmTitle)
+        confirmMessage = panel.findViewById(R.id.confirmMessage)
+        confirmOverlay?.setOnClickListener { hideConfirmDialog() } // tap the scrim to cancel
+        panel.findViewById<TextView>(R.id.confirmCancelButton)?.setOnClickListener { hideConfirmDialog() }
+
         clipboardAdapter = ClipboardAdapter(
             onTap = { item ->
                 currentInputConnection?.commitText(item.text, 1)
@@ -727,7 +738,13 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
                 closeClipboardPanel()
             },
             onTogglePin = { item -> lifecycleScope.launch { clipboardRepository.togglePin(item) } },
-            onDelete = { item -> lifecycleScope.launch { clipboardRepository.delete(item) } },
+            onDelete = { item ->
+                showConfirmDialog(
+                    title = "Delete item?",
+                    message = "This clipboard item will be permanently deleted.",
+                    onConfirm = { lifecycleScope.launch { clipboardRepository.delete(item) } }
+                )
+            },
             onReordered = { ordered -> lifecycleScope.launch { clipboardRepository.reorder(ordered) } }
         )
         recycler.layoutManager = LinearLayoutManager(this)
@@ -736,8 +753,29 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
 
         panel.findViewById<ImageButton>(R.id.clipboardBackButton)?.setOnClickListener { closeClipboardPanel() }
         panel.findViewById<TextView>(R.id.clipboardClearButton)?.setOnClickListener {
-            lifecycleScope.launch { clipboardRepository.clearUnpinned() }
+            showConfirmDialog(
+                title = "Clear clipboard?",
+                message = "All unpinned clipboard items will be deleted. Pinned items are kept.",
+                onConfirm = { lifecycleScope.launch { clipboardRepository.clearUnpinned() } }
+            )
         }
+    }
+
+    /** Shows the in-panel confirmation card for a destructive action (delete / clear). Avoids
+     *  a system AlertDialog, which needs a window token this Service context doesn't cleanly
+     *  have — this overlay lives inside the keyboard's own view tree instead. */
+    private fun showConfirmDialog(title: String, message: String, onConfirm: () -> Unit) {
+        confirmTitle?.text = title
+        confirmMessage?.text = message
+        confirmOverlay?.findViewById<TextView>(R.id.confirmDeleteButton)?.setOnClickListener {
+            onConfirm()
+            hideConfirmDialog()
+        }
+        confirmOverlay?.isVisible = true
+    }
+
+    private fun hideConfirmDialog() {
+        confirmOverlay?.isVisible = false
     }
 
     private fun observeClipboardHistory() {
@@ -761,6 +799,7 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
         isClipboardPanelOpen = false
         clipboardPanel?.isVisible = false
         keyboardView?.isVisible = true
+        hideConfirmDialog()
     }
 
     // ---------------------------------------------------------------------------------------

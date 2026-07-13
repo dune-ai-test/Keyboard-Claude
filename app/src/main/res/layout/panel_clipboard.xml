@@ -1,77 +1,156 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="@color/kb_background">
+    android:layout_height="match_parent">
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="40dp"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:paddingStart="4dp"
-        android:paddingEnd="12dp">
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:background="@color/kb_background">
 
-        <ImageButton
-            android:id="@+id/clipboardBackButton"
-            android:layout_width="40dp"
-            android:layout_height="match_parent"
-            android:background="@drawable/bg_suggestion_ripple"
-            android:src="@drawable/ic_back"
-            android:padding="10dp"
-            android:scaleType="centerInside"
-            android:tint="@color/kb_toolbar_icon"
-            android:contentDescription="Close clipboard" />
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="4dp"
+            android:paddingEnd="12dp">
 
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginStart="8dp"
-            android:text="@string/clipboard_manager"
-            android:textColor="@color/kb_key_text"
-            android:textSize="16sp"
-            android:textStyle="bold" />
+            <ImageButton
+                android:id="@+id/clipboardBackButton"
+                android:layout_width="40dp"
+                android:layout_height="match_parent"
+                android:background="@drawable/bg_suggestion_ripple"
+                android:src="@drawable/ic_back"
+                android:padding="10dp"
+                android:scaleType="centerInside"
+                android:tint="@color/kb_toolbar_icon"
+                android:contentDescription="Close clipboard" />
 
-        <TextView
-            android:id="@+id/clipboardClearButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Clear"
-            android:textColor="@color/kb_accent"
-            android:textSize="14sp"
-            android:padding="6dp"
-            android:background="@drawable/bg_suggestion_ripple" />
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:text="@string/clipboard_manager"
+                android:textColor="@color/kb_key_text"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/clipboardClearButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Clear"
+                android:textColor="@color/kb_accent"
+                android:textSize="14sp"
+                android:padding="6dp"
+                android:background="@drawable/bg_suggestion_ripple" />
+        </LinearLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="@color/kb_divider" />
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/clipboardRecyclerView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:paddingTop="4dp"
+                android:paddingBottom="4dp" />
+
+            <TextView
+                android:id="@+id/clipboardEmptyText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:text="No clipboard history yet"
+                android:textColor="@color/kb_key_subtext"
+                android:textSize="14sp"
+                android:visibility="gone" />
+        </FrameLayout>
     </LinearLayout>
 
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="@color/kb_divider" />
-
+    <!-- Delete/Clear confirmation overlay. Plain Views (not a system Dialog/AlertDialog),
+         since a Service-hosted IME window can't reliably host its own separate dialog window
+         without extra permissions — this renders inline, on top of the panel, instead. -->
     <FrameLayout
+        android:id="@+id/confirmOverlay"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1">
+        android:layout_height="match_parent"
+        android:background="#99000000"
+        android:visibility="gone"
+        android:clickable="true"
+        android:focusable="true">
 
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/clipboardRecyclerView"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:clipToPadding="false"
-            android:paddingTop="4dp"
-            android:paddingBottom="4dp" />
-
-        <TextView
-            android:id="@+id/clipboardEmptyText"
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:id="@+id/confirmCard"
+            android:layout_width="260dp"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
-            android:text="No clipboard history yet"
-            android:textColor="@color/kb_key_subtext"
-            android:textSize="14sp"
-            android:visibility="gone" />
+            android:orientation="vertical"
+            android:background="@drawable/bg_confirm_card"
+            android:clickable="true"
+            android:focusable="true"
+            android:padding="18dp">
+
+            <TextView
+                android:id="@+id/confirmTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/kb_key_text"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                tools:text="Delete item?" />
+
+            <TextView
+                android:id="@+id/confirmMessage"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:textColor="@color/kb_key_subtext"
+                android:textSize="13sp"
+                tools:text="This clipboard item will be permanently deleted." />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:orientation="horizontal"
+                android:gravity="end">
+
+                <TextView
+                    android:id="@+id/confirmCancelButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Cancel"
+                    android:textColor="@color/kb_key_subtext"
+                    android:textSize="14sp"
+                    android:padding="10dp"
+                    android:background="@drawable/bg_suggestion_ripple" />
+
+                <TextView
+                    android:id="@+id/confirmDeleteButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="4dp"
+                    android:text="Delete"
+                    android:textColor="#FF5A5A"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:padding="10dp"
+                    android:background="@drawable/bg_suggestion_ripple" />
+            </LinearLayout>
+        </LinearLayout>
     </FrameLayout>
 
-</LinearLayout>
+</FrameLayout>

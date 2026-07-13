@@ -292,10 +292,10 @@ private fun HeroCard(onEnableKeyboard: () -> Unit, onSwitchKeyboard: () -> Unit)
                 Icon(Icons.Filled.Keyboard, contentDescription = null, tint = Color.White)
             }
             Spacer(Modifier.size(14.dp))
-            Text("Custom Keyboard", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Text("Aura Keyboard", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.size(4.dp))
             Text(
-                "Smart, private, fully on-device typing.",
+                "Type in your colors — smart, private, fully on-device.",
                 color = Color.White.copy(alpha = 0.9f),
                 style = MaterialTheme.typography.bodyMedium
             )
