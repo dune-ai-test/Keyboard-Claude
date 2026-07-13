@@ -157,6 +157,7 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
         settingsRepository.settingsFlow.onEach { settings ->
             currentSettings = settings
             keyboardView?.swipeTypingEnabled = settings.swipeTypingEnabled
+            keyboardView?.keyBordersEnabled = settings.keyBordersEnabled
             applyKeyboardHeight(settings.keyboardHeightPercent)
             if (settings.keyboardThemeId != lastAppliedThemeId || settings.keyboardImageUri != lastAppliedImageUri) {
                 lastAppliedThemeId = settings.keyboardThemeId
@@ -203,6 +204,7 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
         clipboardEmptyText = view.findViewById(R.id.clipboardEmptyText)
 
         keyboardView?.swipeTypingEnabled = currentSettings.swipeTypingEnabled
+        keyboardView?.keyBordersEnabled = currentSettings.keyBordersEnabled
         applyKeyboardTheme(currentSettings)
         keyboardView?.listener = object : KeyboardView.Listener {
             override fun onKeyTap(key: KeyModel) = handleKeyTap(key)

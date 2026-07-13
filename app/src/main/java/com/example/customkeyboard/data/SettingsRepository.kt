@@ -27,6 +27,8 @@ data class KeyboardSettings(
     val popupOnKeyPress: Boolean = true,
     val autoCapitalize: Boolean = true,
     val doubleSpacePeriod: Boolean = true,
+    /** Draws a thin outline around every key when true, off by default. */
+    val keyBordersEnabled: Boolean = false,
     /** One of [KeyboardThemePresets.ALL]'s ids, or [IMAGE_THEME_ID] when a custom picture is active. */
     val keyboardThemeId: String = KeyboardThemePresets.MIDNIGHT_TEAL.id,
     /** content:// URI of the user-picked keyboard background image, when [keyboardThemeId] == [IMAGE_THEME_ID]. */
@@ -60,6 +62,7 @@ class SettingsRepository(private val context: Context) {
         val POPUP_ENABLED = booleanPreferencesKey("popup_enabled")
         val AUTO_CAPS = booleanPreferencesKey("auto_caps")
         val DOUBLE_SPACE_PERIOD = booleanPreferencesKey("double_space_period")
+        val KEY_BORDERS_ENABLED = booleanPreferencesKey("key_borders_enabled")
         val KEYBOARD_THEME_ID = stringPreferencesKey("keyboard_theme_id")
         val KEYBOARD_IMAGE_URI = stringPreferencesKey("keyboard_image_uri")
     }
@@ -79,6 +82,7 @@ class SettingsRepository(private val context: Context) {
             popupOnKeyPress = prefs[Keys.POPUP_ENABLED] ?: true,
             autoCapitalize = prefs[Keys.AUTO_CAPS] ?: true,
             doubleSpacePeriod = prefs[Keys.DOUBLE_SPACE_PERIOD] ?: true,
+            keyBordersEnabled = prefs[Keys.KEY_BORDERS_ENABLED] ?: false,
             keyboardThemeId = prefs[Keys.KEYBOARD_THEME_ID] ?: KeyboardThemePresets.MIDNIGHT_TEAL.id,
             keyboardImageUri = prefs[Keys.KEYBOARD_IMAGE_URI]
         )
@@ -97,6 +101,7 @@ class SettingsRepository(private val context: Context) {
     suspend fun setPopupEnabled(enabled: Boolean) = context.dataStore.edit { it[Keys.POPUP_ENABLED] = enabled }
     suspend fun setAutoCapitalize(enabled: Boolean) = context.dataStore.edit { it[Keys.AUTO_CAPS] = enabled }
     suspend fun setDoubleSpacePeriod(enabled: Boolean) = context.dataStore.edit { it[Keys.DOUBLE_SPACE_PERIOD] = enabled }
+    suspend fun setKeyBordersEnabled(enabled: Boolean) = context.dataStore.edit { it[Keys.KEY_BORDERS_ENABLED] = enabled }
 
     /** Selects one of the 6 built-in color presets and clears any custom background image. */
     suspend fun setKeyboardTheme(themeId: String) = context.dataStore.edit {

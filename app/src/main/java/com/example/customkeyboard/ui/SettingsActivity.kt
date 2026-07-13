@@ -122,7 +122,8 @@ class SettingsActivity : ComponentActivity() {
                     onSwipeToggle = viewModel::setSwipeEnabled,
                     onVoiceToggle = viewModel::setVoiceEnabled,
                     onAutoCapsToggle = viewModel::setAutoCapitalize,
-                    onDoubleSpaceToggle = viewModel::setDoubleSpacePeriod
+                    onDoubleSpaceToggle = viewModel::setDoubleSpacePeriod,
+                    onKeyBordersToggle = viewModel::setKeyBordersEnabled
                 )
             }
         }
@@ -158,7 +159,8 @@ fun SettingsScreen(
     onSwipeToggle: (Boolean) -> Unit,
     onVoiceToggle: (Boolean) -> Unit,
     onAutoCapsToggle: (Boolean) -> Unit,
-    onDoubleSpaceToggle: (Boolean) -> Unit
+    onDoubleSpaceToggle: (Boolean) -> Unit,
+    onKeyBordersToggle: (Boolean) -> Unit
 ) {
     Scaffold(
         topBar = {
@@ -227,6 +229,8 @@ fun SettingsScreen(
                         fontWeight = FontWeight.Medium
                     )
                     Slider(value = settings.keyboardHeightPercent, onValueChange = onHeightChange, valueRange = 0.8f..1.3f)
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                    SwitchRow("Key borders", settings.keyBordersEnabled, onKeyBordersToggle)
                 }
             }
 

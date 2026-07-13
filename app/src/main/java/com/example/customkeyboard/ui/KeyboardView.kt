@@ -66,6 +66,10 @@ class KeyboardView @JvmOverloads constructor(
     /** Enables/disables swipe (gesture) typing at runtime from settings. */
     var swipeTypingEnabled: Boolean = true
 
+    /** Draws a thin outline around every key when enabled, toggled live from Settings. */
+    var keyBordersEnabled: Boolean = false
+        set(value) { field = value; invalidate() }
+
     // --- Paint objects (allocated once) ---
     private val keyBgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val keyBgPressedPaint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -98,7 +102,11 @@ class KeyboardView @JvmOverloads constructor(
     private val bitmapSrcRect = Rect()
     private val bitmapDstRect = RectF()
     private val scrimPaint = Paint()
-    private val keyShadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x5C000000 }
+    private val keyShadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x33000000 }
+    private val keyBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 2f
+    }
 
     private data class KeyBoundsEntry(val key: KeyModel, val rect: RectF)
 
@@ -165,6 +173,7 @@ class KeyboardView @JvmOverloads constructor(
         popupTextPaint.color = theme.keyText
         gesturePathPaint.color = theme.accent
         ripplePaint.color = theme.keyText
+        keyBorderPaint.color = theme.divider
         setBackgroundColor(theme.background)
         invalidate()
     }
@@ -411,6 +420,10 @@ class KeyboardView @JvmOverloads constructor(
                 canvas.drawRoundRect(shadowRect, cornerRadius, cornerRadius, keyShadowPaint)
             }
             canvas.drawRoundRect(drawRect, cornerRadius, cornerRadius, basePaint)
+
+            if (keyBordersEnabled) {
+                canvas.drawRoundRect(drawRect, cornerRadius, cornerRadius, keyBorderPaint)
+            }
 
             if (isAnimatingThisKey && pressAlpha > 0f) {
                 val overlay = if (entry.key.isPrimary) keyPrimaryBgPressedPaint else keyBgPressedPaint
@@ -711,7 +724,7 @@ class KeyboardView @JvmOverloads constructor(
         private const val LONG_PRESS_TIMEOUT_MS = 350L
         private const val TOUCH_SLOP = 16f
         private const val GESTURE_START_THRESHOLD = 40f
-        private const val SCRIM_COLOR = 0x5C000000 // ~36% black, evens out photo brightness
+        private const val SCRIM_COLOR = 0x26000000 // ~15% black — just enough to steady contrast, not hide the photo
         private const val BACKSPACE_INITIAL_REPEAT_DELAY_MS = 400L
         private const val BACKSPACE_REPEAT_INTERVAL_MS = 60L
         private const val PRESS_FADE_IN_MS = 55L
