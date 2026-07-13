@@ -295,10 +295,15 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
             val targetWidth = resources.displayMetrics.widthPixels
             val targetHeight = (resources.displayMetrics.density * BASE_KEYBOARD_HEIGHT_DP).toInt()
 
+            // Pass 1: measure only. BitmapFactory.decodeStream ALWAYS returns null when
+            // inJustDecodeBounds is set — that's expected, not a failure — it reports the
+            // image's real dimensions via the Options object as a side effect instead.
             val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            contentResolver.openInputStream(uri)?.use {
-                BitmapFactory.decodeStream(it, null, boundsOptions)
-            } ?: return@withContext null
+            val boundsStream = contentResolver.openInputStream(uri) ?: return@withContext null
+            boundsStream.use { BitmapFactory.decodeStream(it, null, boundsOptions) }
+            if (boundsOptions.outWidth <= 0 || boundsOptions.outHeight <= 0) {
+                return@withContext null // genuinely unreadable/corrupt image
+            }
 
             var sampleSize = 1
             while (boundsOptions.outWidth / (sampleSize * 2) >= targetWidth &&
@@ -307,8 +312,10 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
                 sampleSize *= 2
             }
 
+            // Pass 2: the real, downsampled decode.
             val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sampleSize }
-            contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, decodeOptions) }
+            val decodeStream = contentResolver.openInputStream(uri) ?: return@withContext null
+            decodeStream.use { BitmapFactory.decodeStream(it, null, decodeOptions) }
         } catch (t: Throwable) {
             // A revoked permission, deleted file, or corrupt image shouldn't crash the keyboard —
             // just fall back to no background image.
