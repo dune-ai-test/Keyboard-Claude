@@ -70,6 +70,11 @@ class KeyboardView @JvmOverloads constructor(
     var keyBordersEnabled: Boolean = false
         set(value) { field = value; invalidate() }
 
+    /** When enabled, keys render with no background rectangle at all — just the label floating
+     *  over whatever's behind it (a press highlight/ripple still shows for tap feedback). */
+    var transparentKeysEnabled: Boolean = false
+        set(value) { field = value; invalidate() }
+
     // --- Paint objects (allocated once) ---
     private val keyBgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val keyBgPressedPaint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -413,16 +418,18 @@ class KeyboardView @JvmOverloads constructor(
                 entry.rect
             }
 
-            if (hasImageBackground) {
-                // A simple flat offset shadow (no blur — cheap, and renders identically on
-                // every API level) so each key visibly separates from the photo behind it.
-                val shadowRect = RectF(drawRect).apply { offset(0f, 2f) }
-                canvas.drawRoundRect(shadowRect, cornerRadius, cornerRadius, keyShadowPaint)
-            }
-            canvas.drawRoundRect(drawRect, cornerRadius, cornerRadius, basePaint)
+            if (!transparentKeysEnabled) {
+                if (hasImageBackground) {
+                    // A simple flat offset shadow (no blur — cheap, and renders identically on
+                    // every API level) so each key visibly separates from the photo behind it.
+                    val shadowRect = RectF(drawRect).apply { offset(0f, 2f) }
+                    canvas.drawRoundRect(shadowRect, cornerRadius, cornerRadius, keyShadowPaint)
+                }
+                canvas.drawRoundRect(drawRect, cornerRadius, cornerRadius, basePaint)
 
-            if (keyBordersEnabled) {
-                canvas.drawRoundRect(drawRect, cornerRadius, cornerRadius, keyBorderPaint)
+                if (keyBordersEnabled) {
+                    canvas.drawRoundRect(drawRect, cornerRadius, cornerRadius, keyBorderPaint)
+                }
             }
 
             if (isAnimatingThisKey && pressAlpha > 0f) {
@@ -446,7 +453,8 @@ class KeyboardView @JvmOverloads constructor(
 
             val displayLabel = displayLabelFor(entry.key)
             keyTextPaint.color = when {
-                entry.key.isPrimary -> currentTheme.background
+                entry.key.isPrimary && !transparentKeysEnabled -> currentTheme.background
+                entry.key.isPrimary -> currentTheme.accent
                 entry.key.type == KeyType.SHIFT && (capsLockActive || shiftActive) -> currentTheme.accent
                 else -> currentTheme.keyText
             }
