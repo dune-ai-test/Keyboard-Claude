@@ -110,7 +110,6 @@ class KeyboardView @JvmOverloads constructor(
     private val keyShadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x33000000 }
     private val keyBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 2f
     }
 
     private data class KeyBoundsEntry(val key: KeyModel, val rect: RectF)
@@ -178,7 +177,11 @@ class KeyboardView @JvmOverloads constructor(
         popupTextPaint.color = theme.keyText
         gesturePathPaint.color = theme.accent
         ripplePaint.color = theme.keyText
-        keyBorderPaint.color = theme.divider
+        // A semi-transparent version of the theme's (always high-contrast) text color reads as a
+        // clearly visible outline on every preset and over any custom image — the low-contrast
+        // "divider" color used previously was nearly invisible against most backgrounds.
+        keyBorderPaint.color = (0x80000000.toInt()) or (theme.keyText and 0x00FFFFFF)
+        keyBorderPaint.strokeWidth = resources.displayMetrics.density * 1.5f
         setBackgroundColor(theme.background)
         invalidate()
     }
@@ -418,6 +421,9 @@ class KeyboardView @JvmOverloads constructor(
                 entry.rect
             }
 
+            // Fill and border are independent, orthogonal toggles: transparent-keys only
+            // controls the solid fill, never the outline — so "outline only, no fill" and
+            // "fill with no outline" are both valid, distinct combinations.
             if (!transparentKeysEnabled) {
                 if (hasImageBackground) {
                     // A simple flat offset shadow (no blur — cheap, and renders identically on
@@ -426,10 +432,10 @@ class KeyboardView @JvmOverloads constructor(
                     canvas.drawRoundRect(shadowRect, cornerRadius, cornerRadius, keyShadowPaint)
                 }
                 canvas.drawRoundRect(drawRect, cornerRadius, cornerRadius, basePaint)
+            }
 
-                if (keyBordersEnabled) {
-                    canvas.drawRoundRect(drawRect, cornerRadius, cornerRadius, keyBorderPaint)
-                }
+            if (keyBordersEnabled) {
+                canvas.drawRoundRect(drawRect, cornerRadius, cornerRadius, keyBorderPaint)
             }
 
             if (isAnimatingThisKey && pressAlpha > 0f) {

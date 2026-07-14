@@ -135,6 +135,12 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
     private var lastAppliedThemeId: String? = null
     private var lastAppliedImageUri: String? = null
 
+    // Mirrors the target field's live selection, reported via onUpdateSelection. Used as a
+    // fallback for detecting an active selection when InputConnection.getSelectedText() is
+    // unreliable in some apps (a handful of WebView/browser fields don't implement it well).
+    private var trackedSelStart = 0
+    private var trackedSelEnd = 0
+
     // One-level undo: remembers the most recent text this IME inserted so it can be reverted.
     private var lastInsertion: String = ""
 
@@ -158,6 +164,7 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
             currentSettings = settings
             keyboardView?.swipeTypingEnabled = settings.swipeTypingEnabled
             keyboardView?.keyBordersEnabled = settings.keyBordersEnabled
+            keyboardView?.transparentKeysEnabled = settings.transparentKeysEnabled
             applyKeyboardHeight(settings.keyboardHeightPercent)
             if (settings.keyboardThemeId != lastAppliedThemeId || settings.keyboardImageUri != lastAppliedImageUri) {
                 lastAppliedThemeId = settings.keyboardThemeId
@@ -205,6 +212,7 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
 
         keyboardView?.swipeTypingEnabled = currentSettings.swipeTypingEnabled
         keyboardView?.keyBordersEnabled = currentSettings.keyBordersEnabled
+        keyboardView?.transparentKeysEnabled = currentSettings.transparentKeysEnabled
         applyKeyboardTheme(currentSettings)
         keyboardView?.listener = object : KeyboardView.Listener {
             override fun onKeyTap(key: KeyModel) = handleKeyTap(key)
@@ -245,6 +253,8 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
         clearSuggestions()
         composingWord.clear()
         lastInsertion = ""
+        trackedSelStart = info?.initialSelStart ?: 0
+        trackedSelEnd = info?.initialSelEnd ?: 0
         shiftActive = shouldAutoCapitalize(info)
         capsLockActive = false
         updateShiftVisual()
@@ -451,6 +461,35 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
 
     private fun handleBackspace() {
         val ic = currentInputConnection ?: return
+
+        // deleteSurroundingText() explicitly excludes the current selection (it only deletes
+        // text before/after it) — so if the user selected text and pressed backspace, the call
+        // below would silently do nothing. Remove the selection directly first.
+        //
+        // getSelectedText() is the primary signal, but a few WebView/browser-based fields don't
+        // implement it reliably, so trackedSelStart/trackedSelEnd (mirrored from every
+        // onUpdateSelection callback) is used as a fallback in case that API returns nothing
+        // even though a selection is actually showing on screen.
+        val reportedSelection = ic.getSelectedText(0)
+        val hasTrackedSelection = trackedSelEnd > trackedSelStart
+        if (!reportedSelection.isNullOrEmpty() || hasTrackedSelection) {
+            ic.beginBatchEdit()
+            if (!reportedSelection.isNullOrEmpty()) {
+                ic.commitText("", 1)
+            } else {
+                // Fall back to explicitly selecting the last-known range, then clearing it.
+                ic.setSelection(trackedSelStart, trackedSelEnd)
+                ic.commitText("", 1)
+            }
+            ic.endBatchEdit()
+            composingWord.clear()
+            lastInsertion = ""
+            trackedSelStart = 0
+            trackedSelEnd = 0
+            updateSuggestions()
+            return
+        }
+
         if (composingWord.isNotEmpty()) {
             composingWord.deleteCharAt(composingWord.length - 1)
         }
@@ -813,6 +852,8 @@ class CustomIME : InputMethodService(), LifecycleOwner, SavedStateRegistryOwner 
         candidatesStart: Int, candidatesEnd: Int
     ) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
+        trackedSelStart = newSelStart
+        trackedSelEnd = newSelEnd
         if (newSelStart != newSelEnd) {
             // User selected a text range externally; don't keep stale composing state.
             composingWord.clear()
